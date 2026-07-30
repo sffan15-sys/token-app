@@ -7,7 +7,11 @@
  * (the default port server/index.ts listens on).
  */
 import { useEffect, useState } from "react";
-import type { UsageRecord } from "../types";
+import type {
+  PlanPlatformId,
+  PlanSelections,
+  UsageRecord,
+} from "../types";
 import { MOCK_USAGE_RECORDS } from "../data/mockData";
 
 const ENV = (import.meta as unknown as { env?: Record<string, string> }).env ?? {};
@@ -38,6 +42,20 @@ export interface ConfigStatus {
   GEMINI_GCP_PROJECT_ID: boolean;
 }
 
+export type PlanConfigKey =
+  | "CLAUDE_PLAN"
+  | "CODEX_PLAN"
+  | "GEMINI_PLAN"
+  | "VERCEL_PLAN"
+  | "CURSOR_PLAN";
+
+export type ConfigKey = keyof ConfigStatus | PlanConfigKey;
+
+export interface ConfigResponse {
+  status: ConfigStatus;
+  plans: PlanSelections;
+}
+
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`);
   if (!res.ok) throw new Error(`${path} returned HTTP ${res.status}`);
@@ -62,9 +80,24 @@ export function fetchLatestUsage(): Promise<UsageRecord[]> {
   return getJson<{ records: UsageRecord[] }>("/api/usage").then((d) => d.records);
 }
 
-export function fetchPlatformUsage(platform: string): Promise<UsageRecord[]> {
+export function fetchPlatformUsage(
+  platform: string,
+  limit = 2000
+): Promise<UsageRecord[]> {
   if (DEMO_MODE) return Promise.resolve(MOCK_USAGE_RECORDS.filter((r) => r.platform === platform));
-  return getJson<{ records: UsageRecord[] }>(`/api/usage/${encodeURIComponent(platform)}`).then((d) => d.records);
+  return getJson<{ records: UsageRecord[] }>(
+    `/api/usage/${encodeURIComponent(platform)}?limit=${limit}`
+  ).then((d) => d.records);
+}
+
+/** Full-enough history for completed-window and billing-period waste estimates. */
+export async function fetchWasteHistory(): Promise<UsageRecord[]> {
+  if (DEMO_MODE) return MOCK_USAGE_RECORDS;
+  const platformIds: PlanPlatformId[] = ["claude", "codex", "vercel"];
+  const history = await Promise.all(
+    platformIds.map((platformId) => fetchPlatformUsage(platformId, 5000))
+  );
+  return history.flat();
 }
 
 export function fetchErrors(): Promise<CollectorErrorRow[]> {
@@ -80,6 +113,10 @@ const DEMO_CONFIG_STATUS: ConfigStatus = {
   GOOGLE_APPLICATION_CREDENTIALS: false,
   GEMINI_GCP_PROJECT_ID: false,
 };
+const DEMO_CONFIG: ConfigResponse = {
+  status: DEMO_CONFIG_STATUS,
+  plans: {},
+};
 
 export function postManualLog(entry: {
   platform: string;
@@ -94,16 +131,22 @@ export function postManualLog(entry: {
   return postJson("/api/manual-log", entry);
 }
 
-export function fetchConfigStatus(): Promise<ConfigStatus> {
-  if (DEMO_MODE) return Promise.resolve(DEMO_CONFIG_STATUS);
-  return getJson<{ status: ConfigStatus }>("/api/config").then((d) => d.status);
+export function fetchConfig(): Promise<ConfigResponse> {
+  if (DEMO_MODE) return Promise.resolve(DEMO_CONFIG);
+  return getJson<ConfigResponse>("/api/config");
 }
 
-export function saveConfig(patch: Partial<Record<keyof ConfigStatus, string>>): Promise<ConfigStatus> {
+export function fetchConfigStatus(): Promise<ConfigStatus> {
+  return fetchConfig().then((config) => config.status);
+}
+
+export function saveConfig(
+  patch: Partial<Record<ConfigKey, string>>
+): Promise<ConfigResponse> {
   if (DEMO_MODE) {
     return Promise.reject(new Error("This is a static demo build with no backend — settings aren't saved here."));
   }
-  return postJson<{ status: ConfigStatus }>("/api/config", patch).then((d) => d.status);
+  return postJson<ConfigResponse>("/api/config", patch);
 }
 
 /**

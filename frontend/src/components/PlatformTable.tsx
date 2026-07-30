@@ -5,7 +5,7 @@ import { derivePlatformCost, formatCostForTable } from "../lib/costs";
 import { formatDuration, formatRelativeTime } from "../lib/format";
 import { isPoolPlatform, poolSnapshot, snapshotForWindow } from "../lib/selectors";
 import { statusForUsage, worstStatus } from "../lib/status";
-import type { PlatformMeta, UsageRecord } from "../types";
+import type { PlanSelections, PlatformMeta, UsageRecord } from "../types";
 
 interface Row {
   meta: PlatformMeta;
@@ -25,10 +25,14 @@ interface Row {
   monthlyCostText: string;
 }
 
-function buildRow(meta: PlatformMeta, records: UsageRecord[]): Row {
+function buildRow(
+  meta: PlatformMeta,
+  records: UsageRecord[],
+  planSelections: PlanSelections
+): Row {
   const cadence = meta.tier === "manual" ? "slow" : "live";
   const monthlyCostText = formatCostForTable(
-    derivePlatformCost(meta, records)
+    derivePlatformCost(meta, records, planSelections)
   );
 
   if (meta.dataMode === "unavailable") {
@@ -160,8 +164,18 @@ const SWATCH_VAR: Record<PlatformMeta["color"], string> = {
  * Replaces the card grid per owner's explicit "columns and rows, bars not
  * text" ask. See design/ux-brainstorm.md.
  */
-export function PlatformTable({ platforms, records }: { platforms: PlatformMeta[]; records: UsageRecord[] }) {
-  const rows = platforms.map((meta) => buildRow(meta, records));
+export function PlatformTable({
+  platforms,
+  records,
+  planSelections = {},
+}: {
+  platforms: PlatformMeta[];
+  records: UsageRecord[];
+  planSelections?: PlanSelections;
+}) {
+  const rows = platforms.map((meta) =>
+    buildRow(meta, records, planSelections)
+  );
 
   return (
     <div className="overflow-x-auto">

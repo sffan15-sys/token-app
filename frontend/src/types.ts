@@ -69,4 +69,14 @@ export interface PlatformMeta {
   connectionNote?: string;
 }
 
+export type PlanPlatformId =
+  | "claude"
+  | "codex"
+  | "gemini"
+  | "vercel"
+  | "cursor";
+
+/** A missing entry means "Auto-detect"; a value is a Settings override. */
+export type PlanSelections = Partial<Record<PlanPlatformId, string>>;
+
 export type Status = "good" | "watch" | "hot" | "stale";

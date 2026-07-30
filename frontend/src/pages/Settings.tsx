@@ -1,5 +1,17 @@
-import { useState } from "react";
-import { fetchConfigStatus, saveConfig, useFetch, type ConfigStatus } from "../lib/api";
+import { useEffect, useState } from "react";
+import {
+  PLAN_CATALOG,
+  PLAN_CONFIG_KEY_BY_PLATFORM,
+  findPlan,
+} from "../data/planCatalog";
+import { PLATFORMS } from "../data/mockData";
+import {
+  fetchConfig,
+  saveConfig,
+  useFetch,
+  type ConfigStatus,
+} from "../lib/api";
+import type { PlanPlatformId, PlanSelections } from "../types";
 
 const THRESHOLDS = [
   { label: "Approaching-limit warning", value: "70% used" },
@@ -58,13 +70,19 @@ const CONFIG_FIELDS: Array<{
 
 export function Settings() {
   const {
-    data: configStatus,
+    data: config,
     loading: configLoading,
     error: configError,
     reload: reloadConfig,
-  } = useFetch(fetchConfigStatus);
+  } = useFetch(fetchConfig);
   const [values, setValues] = useState<Partial<Record<keyof ConfigStatus, string>>>({});
+  const [planValues, setPlanValues] = useState<PlanSelections>({});
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const configStatus = config?.status;
+
+  useEffect(() => {
+    if (config) setPlanValues(config.plans);
+  }, [config]);
 
   async function saveField(configKey: keyof ConfigStatus) {
     const value = values[configKey];
@@ -76,6 +94,37 @@ export function Settings() {
       setValues((current) => ({ ...current, [configKey]: "" }));
       reloadConfig();
     } catch (err) {
+      setSavedMessage(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setTimeout(() => setSavedMessage(null), 4000);
+  }
+
+  async function savePlan(platformId: PlanPlatformId, planId: string) {
+    const previous = planValues[platformId];
+    setPlanValues((current) => ({
+      ...current,
+      [platformId]: planId || undefined,
+    }));
+
+    try {
+      await saveConfig({
+        [PLAN_CONFIG_KEY_BY_PLATFORM[platformId]]: planId,
+      });
+      const platformLabel =
+        PLATFORMS.find((platform) => platform.id === platformId)?.label ??
+        platformId;
+      const plan = findPlan(platformId, planId);
+      setSavedMessage(
+        plan
+          ? `${plan.label} saved for ${platformLabel}.`
+          : `Automatic cost detection restored for ${platformLabel}.`
+      );
+      reloadConfig();
+    } catch (err) {
+      setPlanValues((current) => ({
+        ...current,
+        [platformId]: previous,
+      }));
       setSavedMessage(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
     }
     setTimeout(() => setSavedMessage(null), 4000);
@@ -121,6 +170,79 @@ export function Settings() {
             </div>
           </div>
         </div>
+      </section>
+
+      <section
+        className="rounded-xl border p-4"
+        style={{ background: "var(--surface-card)", borderColor: "var(--border)" }}
+      >
+        <h2 className="mb-1 font-semibold" style={{ color: "var(--text-primary)" }}>
+          Plans &amp; included value
+        </h2>
+        <p className="mb-4 text-xs" style={{ color: "var(--text-muted)" }}>
+          Choose your actual plan when it cannot be detected, or to override detection. Prices are
+          current US public list prices checked July 30, 2026. Switch back to Auto-detect anytime.
+        </p>
+        <div className="flex flex-col gap-4">
+          {PLATFORMS.map((platform) => {
+            const platformId = platform.id as PlanPlatformId;
+            const selectedId = planValues[platformId] ?? "";
+            const selectedPlan = findPlan(platformId, selectedId);
+            const automaticCopy =
+              platformId === "codex"
+                ? "Uses the plan_type reported by Codex when its tier is unambiguous."
+                : platformId === "vercel"
+                  ? "Uses real FOCUS billed charges; select Pro to add its included-credit context."
+                  : "No plan field is available from this integration, so cost stays unknown until selected.";
+
+            return (
+              <div
+                key={platformId}
+                className="grid gap-1 border-t pt-3 sm:grid-cols-[9rem_1fr] sm:gap-3"
+                style={{ borderColor: "var(--border)" }}
+              >
+                <label
+                  htmlFor={`${platformId}-plan`}
+                  className="text-sm font-medium"
+                  style={{ color: "var(--text-secondary)" }}
+                >
+                  {platform.label}
+                </label>
+                <div>
+                  <select
+                    id={`${platformId}-plan`}
+                    value={selectedId}
+                    disabled={configLoading}
+                    onChange={(event) =>
+                      void savePlan(platformId, event.target.value)
+                    }
+                    className="w-full rounded-md border px-2 py-1.5 text-sm"
+                    style={{
+                      borderColor: "var(--border)",
+                      background: "var(--surface-raised)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    <option value="">Auto-detect</option>
+                    {(PLAN_CATALOG[platformId] ?? []).map((plan) => (
+                      <option key={plan.id} value={plan.id}>
+                        {plan.label} — {plan.priceLabel}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                    {selectedPlan ? selectedPlan.allowance.summary : automaticCopy}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-4 text-xs" style={{ color: "var(--text-muted)" }}>
+          Providers publish different allowance units. The dashboard keeps window percentages,
+          dollar credits, metered quota, and unavailable usage separate instead of inventing token
+          limits.
+        </p>
       </section>
 
       <section

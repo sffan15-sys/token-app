@@ -1,7 +1,13 @@
-import type { PlatformMeta, UsageRecord } from "../types";
+import { findPlan } from "../data/planCatalog";
+import type {
+  PlanSelections,
+  PlatformMeta,
+  UsageRecord,
+} from "../types";
 
 export type CostKind = "subscription" | "billed";
 export type CostStatus = "known" | "unknown" | "not_connected";
+export type CostSource = "manual" | "detected" | "billing" | "unavailable";
 
 export interface DerivedPlatformCost {
   platformId: string;
@@ -11,29 +17,19 @@ export interface DerivedPlatformCost {
   label: string;
   detail: string;
   planType: string | null;
+  source: CostSource;
 }
 
-interface FixedPlanPrice {
-  label: string;
-  monthlyUsd: number;
-}
-
-/**
- * Fixed individual-plan prices from OpenAI's official ChatGPT/Codex pricing
- * page, checked 2026-07-30. Pro now has distinct 5x ($100) and 20x ($200)
- * variants, so only identifiers that explicitly name the variant are safe
- * to price. A bare `pro` value remains unknown.
- */
-const FIXED_CODEX_PLAN_PRICES: Record<string, FixedPlanPrice> = {
-  free: { label: "Free", monthlyUsd: 0 },
-  go: { label: "Go", monthlyUsd: 8 },
-  plus: { label: "Plus", monthlyUsd: 20 },
-  "pro-5x": { label: "Pro 5x", monthlyUsd: 100 },
-  pro_5x: { label: "Pro 5x", monthlyUsd: 100 },
-  pro5x: { label: "Pro 5x", monthlyUsd: 100 },
-  "pro-20x": { label: "Pro 20x", monthlyUsd: 200 },
-  pro_20x: { label: "Pro 20x", monthlyUsd: 200 },
-  pro20x: { label: "Pro 20x", monthlyUsd: 200 },
+const CODEX_PLAN_TYPE_TO_CATALOG_ID: Record<string, string> = {
+  free: "free",
+  go: "go",
+  plus: "plus",
+  "pro-5x": "pro_5x",
+  pro_5x: "pro_5x",
+  pro5x: "pro_5x",
+  "pro-20x": "pro_20x",
+  pro_20x: "pro_20x",
+  pro20x: "pro_20x",
 };
 
 function latestRecord(
@@ -55,6 +51,25 @@ function latestCodexPlanType(records: UsageRecord[]): string | null {
   return latest?.plan_type?.trim().toLowerCase() || null;
 }
 
+function deriveManualCost(
+  meta: PlatformMeta,
+  selectedPlanId: string
+): DerivedPlatformCost | null {
+  const plan = findPlan(meta.id, selectedPlanId);
+  if (!plan) return null;
+  return {
+    platformId: meta.id,
+    status: "known",
+    kind: "subscription",
+    amountUsd: plan.monthlyUsd,
+    label: plan.label,
+    detail:
+      "Selected in Settings; this manual plan overrides automatic cost derivation.",
+    planType: plan.id,
+    source: "manual",
+  };
+}
+
 function deriveCodexCost(records: UsageRecord[]): DerivedPlatformCost {
   const planType = latestCodexPlanType(records);
   if (!planType) {
@@ -66,19 +81,22 @@ function deriveCodexCost(records: UsageRecord[]): DerivedPlatformCost {
       label: "Cost unknown",
       detail: "No source-reported ChatGPT plan has been collected yet.",
       planType: null,
+      source: "unavailable",
     };
   }
 
-  const fixed = FIXED_CODEX_PLAN_PRICES[planType];
-  if (fixed) {
+  const catalogId = CODEX_PLAN_TYPE_TO_CATALOG_ID[planType];
+  const plan = catalogId ? findPlan("codex", catalogId) : null;
+  if (plan) {
     return {
       platformId: "codex",
       status: "known",
       kind: "subscription",
-      amountUsd: fixed.monthlyUsd,
-      label: fixed.label,
+      amountUsd: plan.monthlyUsd,
+      label: plan.label,
       detail: `Detected automatically from Codex plan_type: ${planType}.`,
       planType,
+      source: "detected",
     };
   }
 
@@ -88,10 +106,11 @@ function deriveCodexCost(records: UsageRecord[]): DerivedPlatformCost {
       status: "unknown",
       kind: null,
       amountUsd: null,
-      label: "Pro (variant unknown)",
+      label: "Pro (tier unknown)",
       detail:
-        "OpenAI offers $100/month Pro 5x and $200/month Pro 20x; plan_type does not identify which variant.",
+        "OpenAI offers $100/month Pro 5x and $200/month Pro 20x; the reported plan_type does not identify which tier.",
       planType,
+      source: "unavailable",
     };
   }
 
@@ -105,6 +124,7 @@ function deriveCodexCost(records: UsageRecord[]): DerivedPlatformCost {
       detail:
         "Business is priced per user; the collector does not expose seat count or annual-vs-monthly billing cadence.",
       planType,
+      source: "unavailable",
     };
   }
 
@@ -116,6 +136,7 @@ function deriveCodexCost(records: UsageRecord[]): DerivedPlatformCost {
     label: planType,
     detail: `Plan "${planType}" was detected, but it has no unambiguous public fixed monthly price.`,
     planType,
+    source: "unavailable",
   };
 }
 
@@ -134,6 +155,7 @@ function deriveVercelCost(records: UsageRecord[]): DerivedPlatformCost {
       label: "Cost unknown",
       detail: "No Vercel billing-period aggregate has been collected yet.",
       planType: null,
+      source: "unavailable",
     };
   }
 
@@ -147,6 +169,7 @@ function deriveVercelCost(records: UsageRecord[]): DerivedPlatformCost {
       detail:
         "Non-USD charges are not converted or silently included in the USD total.",
       planType: null,
+      source: "unavailable",
     };
   }
 
@@ -158,13 +181,24 @@ function deriveVercelCost(records: UsageRecord[]): DerivedPlatformCost {
     label: "Billed charges",
     detail: "Net Vercel FOCUS BilledCost summed for the current month.",
     planType: null,
+    source: "billing",
   };
 }
 
 export function derivePlatformCost(
   meta: PlatformMeta,
-  records: UsageRecord[]
+  records: UsageRecord[],
+  planSelections: PlanSelections = {}
 ): DerivedPlatformCost {
+  const selectedPlanId =
+    meta.id in planSelections
+      ? planSelections[meta.id as keyof PlanSelections]
+      : undefined;
+  if (selectedPlanId) {
+    const manual = deriveManualCost(meta, selectedPlanId);
+    if (manual) return manual;
+  }
+
   if (meta.id === "codex") return deriveCodexCost(records);
   if (meta.id === "vercel") return deriveVercelCost(records);
   if (meta.id === "cursor") {
@@ -175,8 +209,9 @@ export function derivePlatformCost(
       amountUsd: null,
       label: "Not connected",
       detail:
-        "No billing or plan API is available for an individual Cursor account.",
+        "No billing or plan API is available for an individual Cursor account. Choose a plan in Settings to add its cost.",
       planType: null,
+      source: "unavailable",
     };
   }
   if (meta.id === "claude") {
@@ -187,8 +222,9 @@ export function derivePlatformCost(
       amountUsd: null,
       label: "Cost unknown",
       detail:
-        "Claude Code's statusLine payload does not expose subscription plan or tier.",
+        "Claude Code's statusLine payload does not expose subscription plan or tier. Choose a plan in Settings.",
       planType: null,
+      source: "unavailable",
     };
   }
   if (meta.id === "gemini") {
@@ -199,8 +235,9 @@ export function derivePlatformCost(
       amountUsd: null,
       label: "Cost unknown",
       detail:
-        "Cloud Monitoring quota metrics do not expose Gemini subscription or billing plan.",
+        "Cloud Monitoring quota metrics do not expose a consumer Gemini plan. Choose a plan in Settings.",
       planType: null,
+      source: "unavailable",
     };
   }
   return {
@@ -211,12 +248,13 @@ export function derivePlatformCost(
     label: "Cost unknown",
     detail: "No automatic billing source is available.",
     planType: null,
+    source: "unavailable",
   };
 }
 
 export function formatCostForTable(cost: DerivedPlatformCost): string {
   if (cost.amountUsd !== null && cost.kind === "subscription") {
-    return `$${cost.amountUsd.toFixed(0)}/mo`;
+    return `$${cost.amountUsd.toFixed(cost.amountUsd % 1 === 0 ? 0 : 2)}/mo`;
   }
   if (cost.amountUsd !== null && cost.kind === "billed") {
     return `$${cost.amountUsd.toFixed(2)} billed`;
@@ -226,10 +264,11 @@ export function formatCostForTable(cost: DerivedPlatformCost): string {
 
 export function deriveCostSummary(
   platforms: PlatformMeta[],
-  records: UsageRecord[]
+  records: UsageRecord[],
+  planSelections: PlanSelections = {}
 ) {
   const costs = platforms.map((platform) =>
-    derivePlatformCost(platform, records)
+    derivePlatformCost(platform, records, planSelections)
   );
   const known = costs.filter(
     (

@@ -7,6 +7,10 @@
  * across the current calendar month. That aggregate is what the frontend
  * uses; it includes base seats, usage, credits, adjustments, and taxes
  * exactly when those categories are present in the returned charge data.
+ * A separate `billing_period_usage_value` aggregate sums only positive
+ * Usage-category BilledCost so the UI can compare consumed resources with a
+ * manually selected plan's published included credit without mistaking seats,
+ * tax, adjustments, or credit lines for resource consumption.
  *
  * Docs verified live against vercel.com/docs/rest-api/billing/list-focus-billing-charges
  * on 2026-07-30:
@@ -278,6 +282,25 @@ export async function collectVercelUsage(opts: CollectVercelOptions = {}): Promi
         charge_count: chargesSeen,
         billing_currency: currency,
         billed_by_category: billedByCategory,
+      }),
+    });
+    const usageValue = Math.round(
+      (Math.max(0, billedByCategory.Usage ?? 0) + Number.EPSILON) * 100
+    ) / 100;
+    allRecords.push({
+      platform: PLATFORM,
+      window_start: from,
+      window_end: aggregateWindowEnd,
+      metric: "billing_period_usage_value",
+      value: usageValue,
+      unit: currency.toLowerCase(),
+      fetched_at: fetchedAt,
+      raw: JSON.stringify({
+        source: "vercel_focus_v1.3",
+        charge_category: "Usage",
+        excludes: ["Adjustment", "Credit", "Purchase", "Tax"],
+        query_from: from,
+        query_to: to,
       }),
     });
   } else {

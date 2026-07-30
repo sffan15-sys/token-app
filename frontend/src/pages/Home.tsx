@@ -2,7 +2,12 @@ import { CostSummary } from "../components/CostSummary";
 import { IdleHeadroomPanel } from "../components/IdleHeadroomPanel";
 import { PlatformTable } from "../components/PlatformTable";
 import { PLATFORMS } from "../data/mockData";
-import { fetchLatestUsage, useFetch } from "../lib/api";
+import {
+  fetchConfig,
+  fetchLatestUsage,
+  fetchWasteHistory,
+  useFetch,
+} from "../lib/api";
 
 /**
  * Usage first, cost second. Alerts have their own nav tab (Alerts.tsx) and
@@ -12,7 +17,14 @@ import { fetchLatestUsage, useFetch } from "../lib/api";
  * history on this page's layout.
  */
 export function Home() {
-  const { data: records, loading, error } = useFetch(fetchLatestUsage);
+  const { data, loading, error } = useFetch(async () => {
+    const [records, historyRecords, config] = await Promise.all([
+      fetchLatestUsage(),
+      fetchWasteHistory(),
+      fetchConfig(),
+    ]);
+    return { records, historyRecords, planSelections: config.plans };
+  });
 
   if (loading) {
     return (
@@ -33,7 +45,9 @@ export function Home() {
     );
   }
 
-  const usageRecords = records ?? [];
+  const usageRecords = data?.records ?? [];
+  const historyRecords = data?.historyRecords ?? [];
+  const planSelections = data?.planSelections ?? {};
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-8 p-4 sm:p-6">
@@ -41,21 +55,32 @@ export function Home() {
         <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
           Usage right now
         </h2>
-        <PlatformTable platforms={PLATFORMS} records={usageRecords} />
+        <PlatformTable
+          platforms={PLATFORMS}
+          records={usageRecords}
+          planSelections={planSelections}
+        />
         {usageRecords.length === 0 && (
           <div className="rounded-lg border p-3 text-xs" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
             No data yet — run a collector (<code>npm run collect:vercel</code>, etc, or start{" "}
             <code>npm run server</code> to run them on a schedule).
           </div>
         )}
-        <IdleHeadroomPanel records={usageRecords} />
+        <IdleHeadroomPanel
+          records={usageRecords}
+          planSelections={planSelections}
+        />
       </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
           Cost summary
         </h2>
-        <CostSummary records={usageRecords} />
+        <CostSummary
+          records={usageRecords}
+          historyRecords={historyRecords}
+          planSelections={planSelections}
+        />
       </section>
     </div>
   );

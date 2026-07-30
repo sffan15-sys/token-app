@@ -10,7 +10,13 @@
 import cors from "cors";
 import express, { type Request, type Response } from "express";
 import { getDb, insertUsageRecords, type UsageRecord } from "../storage/db.js";
-import { applyConfigToEnv, configStatus, writeConfig, type LocalConfig } from "./config.js";
+import {
+  applyConfigToEnv,
+  configStatus,
+  planSelections,
+  writeConfig,
+  type LocalConfig,
+} from "./config.js";
 
 interface UsageRow {
   id: number;
@@ -162,9 +168,9 @@ export function createApp() {
     });
   });
 
-  // GET /api/config — which keys are currently set (booleans only — never returns values).
+  // GET /api/config — credentials are boolean-only; non-secret plan IDs are readable.
   app.get("/api/config", (_req: Request, res: Response) => {
-    res.json({ status: configStatus() });
+    res.json({ status: configStatus(), plans: planSelections() });
   });
 
   // POST /api/config — persist API keys/tokens to the local git-ignored config file, and apply
@@ -173,7 +179,7 @@ export function createApp() {
     const body: LocalConfig = req.body ?? {};
     writeConfig(body);
     applyConfigToEnv();
-    res.json({ status: configStatus() });
+    res.json({ status: configStatus(), plans: planSelections() });
   });
 
   app.get("/api/health", (_req: Request, res: Response) => {

@@ -3,7 +3,7 @@ import { PLATFORMS } from "../data/mockData";
 import { derivePlatformCost } from "../lib/costs";
 import { isPoolPlatform, poolSnapshot, snapshotForWindow } from "../lib/selectors";
 import { formatDuration, formatPercent } from "../lib/format";
-import type { UsageRecord } from "../types";
+import type { PlanSelections, UsageRecord } from "../types";
 
 /**
  * AI capacity destinations only — Vercel is infra/hosting, not an
@@ -38,10 +38,16 @@ function costPerRemainingPoint(monthlyCostUsd: number | null, usedPercent: numbe
  * original flat-threshold version treated them identically — see
  * research/codex-critique.md #4 / design/critique-claude.md 2.3).
  */
-export function IdleHeadroomPanel({ records }: { records: UsageRecord[] }) {
+export function IdleHeadroomPanel({
+  records,
+  planSelections = {},
+}: {
+  records: UsageRecord[];
+  planSelections?: PlanSelections;
+}) {
   const candidates = PLATFORMS.filter((meta) => AI_TASK_PLATFORM_IDS.has(meta.id))
     .map((meta) => {
-      const cost = derivePlatformCost(meta, records);
+      const cost = derivePlatformCost(meta, records, planSelections);
       const monthlyCostUsd = cost.kind === "subscription" ? cost.amountUsd : null;
       if (isPoolPlatform(meta)) {
         const snap = poolSnapshot(records, meta.id);

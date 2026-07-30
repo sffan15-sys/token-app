@@ -27,8 +27,8 @@ const DATA_DIR = process.env.DATA_DIR
   : path.join(__dirname, "..", "data");
 const CONFIG_PATH = path.join(DATA_DIR, "local-config.json");
 
-/** Every key this app knows how to persist, mapped to the env var a collector reads. */
-export const CONFIG_KEYS = {
+/** Secret/path values are exposed to the frontend as set/unset booleans only. */
+export const CREDENTIAL_CONFIG_KEYS = {
   VERCEL_TOKEN: "VERCEL_TOKEN",
   VERCEL_TEAM_ID: "VERCEL_TEAM_ID",
   OPENAI_API_KEY: "OPENAI_API_KEY",
@@ -37,9 +37,31 @@ export const CONFIG_KEYS = {
   GEMINI_GCP_PROJECT_ID: "GEMINI_GCP_PROJECT_ID",
 } as const;
 
+/** Non-secret plan overrides are safe to return to the browser. */
+export const PLAN_CONFIG_KEYS = {
+  claude: "CLAUDE_PLAN",
+  codex: "CODEX_PLAN",
+  gemini: "GEMINI_PLAN",
+  vercel: "VERCEL_PLAN",
+  cursor: "CURSOR_PLAN",
+} as const;
+
+/** Every key this app knows how to persist. */
+export const CONFIG_KEYS = {
+  ...CREDENTIAL_CONFIG_KEYS,
+  CLAUDE_PLAN: "CLAUDE_PLAN",
+  CODEX_PLAN: "CODEX_PLAN",
+  GEMINI_PLAN: "GEMINI_PLAN",
+  VERCEL_PLAN: "VERCEL_PLAN",
+  CURSOR_PLAN: "CURSOR_PLAN",
+} as const;
+
 export type ConfigKey = keyof typeof CONFIG_KEYS;
+export type CredentialConfigKey = keyof typeof CREDENTIAL_CONFIG_KEYS;
+export type PlanPlatformId = keyof typeof PLAN_CONFIG_KEYS;
 
 export type LocalConfig = Partial<Record<ConfigKey, string>>;
+export type PlanSelections = Partial<Record<PlanPlatformId, string>>;
 
 export function readConfig(): LocalConfig {
   try {
@@ -72,7 +94,9 @@ export function writeConfig(patch: LocalConfig): LocalConfig {
 /** Copies saved config values into process.env, without ever logging them. */
 export function applyConfigToEnv(): void {
   const cfg = readConfig();
-  for (const key of Object.keys(CONFIG_KEYS) as ConfigKey[]) {
+  for (const key of Object.keys(
+    CREDENTIAL_CONFIG_KEYS
+  ) as CredentialConfigKey[]) {
     const value = cfg[key];
     if (value && !process.env[key]) {
       process.env[key] = value;
@@ -81,11 +105,27 @@ export function applyConfigToEnv(): void {
 }
 
 /** Status only (which keys are set) — safe to return to the frontend, never the values themselves. */
-export function configStatus(): Record<ConfigKey, boolean> {
+export function configStatus(): Record<CredentialConfigKey, boolean> {
   const cfg = readConfig();
-  const status = {} as Record<ConfigKey, boolean>;
-  for (const key of Object.keys(CONFIG_KEYS) as ConfigKey[]) {
+  const status = {} as Record<CredentialConfigKey, boolean>;
+  for (const key of Object.keys(
+    CREDENTIAL_CONFIG_KEYS
+  ) as CredentialConfigKey[]) {
     status[key] = Boolean(cfg[key]);
   }
   return status;
+}
+
+/** Plan IDs are ordinary preferences, not credentials, so Settings can read them back. */
+export function planSelections(): PlanSelections {
+  const cfg = readConfig();
+  const selections: PlanSelections = {};
+  for (const [platformId, configKey] of Object.entries(PLAN_CONFIG_KEYS) as [
+    PlanPlatformId,
+    (typeof PLAN_CONFIG_KEYS)[PlanPlatformId],
+  ][]) {
+    const value = cfg[configKey]?.trim();
+    if (value) selections[platformId] = value;
+  }
+  return selections;
 }

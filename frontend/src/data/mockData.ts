@@ -196,6 +196,15 @@ const records: UsageRecord[] = [];
     unit: "usd",
     fetched_at: iso(now),
   });
+  records.push({
+    platform: "vercel",
+    window_start: iso(periodStart),
+    window_end: iso(periodStart + 30 * DAY),
+    metric: "billing_period_usage_value",
+    value: 15.4,
+    unit: "usd",
+    fetched_at: iso(now),
+  });
 }
 
 export const MOCK_USAGE_RECORDS: UsageRecord[] = records;
