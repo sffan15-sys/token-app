@@ -31,7 +31,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, "..", "data");
+/**
+ * Data directory is overridable via DATA_DIR so multiple fully-isolated
+ * instances of this app (e.g. one per user) can run from the same checkout
+ * with zero shared state - each instance just points at its own directory.
+ * See README.md "Running a second, isolated instance" for the multi-user
+ * setup this exists for.
+ */
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.join(__dirname, "..", "data");
 const DB_PATH = path.join(DATA_DIR, "token-app.db");
 
 export interface UsageRecord {

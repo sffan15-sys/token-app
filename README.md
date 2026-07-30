@@ -266,6 +266,26 @@ from what already worked against `MOCK_USAGE_RECORDS` (same `UsageRecord[]`
 shape in, same components), but an actual browser render was not screenshot
 -verified in this pass.
 
+## Running a second, isolated instance (e.g. for a second user)
+
+This is a single-user tool per instance - there's no login/auth. For a
+second person (e.g. sharing this with someone else) to track their own
+platforms without touching your data, run a second, fully separate
+instance instead of adding multi-tenant accounts:
+
+```
+DATA_DIR=/path/to/wyatts-data PORT=8788 npm run server
+```
+
+`DATA_DIR` controls where both the SQLite DB (`storage/db.ts`) and the
+saved API keys (`server/config.ts`'s `local-config.json`) live - point it
+at a different directory and the two instances share nothing. Pair with a
+different `PORT` (and a different `VITE_API_BASE` when running the
+frontend against that instance) so both can run side by side on one
+machine, or just run each instance on its own machine/computer entirely.
+Nothing in the DB schema or API assumes a single global instance, so this
+required no other changes.
+
 ## Next steps
 
 1. Get a real `VERCEL_TOKEN` and confirm plan tier, run

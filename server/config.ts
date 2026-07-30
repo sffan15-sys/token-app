@@ -20,7 +20,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, "..", "data");
+// Same DATA_DIR override as storage/db.ts - keep them in sync so one
+// instance's DB and config always live together.
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : path.join(__dirname, "..", "data");
 const CONFIG_PATH = path.join(DATA_DIR, "local-config.json");
 
 /** Every key this app knows how to persist, mapped to the env var a collector reads. */
