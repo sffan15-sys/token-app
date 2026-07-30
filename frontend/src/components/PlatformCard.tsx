@@ -4,7 +4,7 @@ import { Sparkline } from "./Sparkline";
 import { StatusPill } from "./StatusPill";
 import { formatDuration, formatPercent, formatRelativeTime } from "../lib/format";
 import { isPoolPlatform, poolSnapshot, snapshotForWindow } from "../lib/selectors";
-import { statusForUsage } from "../lib/status";
+import { statusForUsage, worstStatus } from "../lib/status";
 import type { PlatformMeta, UsageRecord } from "../types";
 
 const SERIES_VAR: Record<PlatformMeta["color"], string> = {
@@ -85,10 +85,18 @@ export function PlatformCard({ meta, records }: { meta: PlatformMeta; records: U
 
   const primaryWindow = meta.windows[0];
   const snap = snapshotForWindow(records, meta.id, primaryWindow);
-  const status = statusForUsage(snap.usedPercent, snap.lastFetchedAt, meta.tier === "manual" ? "slow" : "live");
+  const cadence = meta.tier === "manual" ? "slow" : "live";
+  const primaryStatus = statusForUsage(snap.usedPercent, snap.lastFetchedAt, cadence);
   const sparkData = snap.series.slice(-15).map((r) => ({ fetched_at: r.fetched_at, value: r.value }));
   const secondaryWindow = meta.windows[1];
   const secondarySnap = secondaryWindow ? snapshotForWindow(records, meta.id, secondaryWindow) : null;
+  const secondaryStatus = secondarySnap
+    ? statusForUsage(secondarySnap.usedPercent, secondarySnap.lastFetchedAt, cadence)
+    : null;
+  // Card badge reflects whichever active window is most constrained, not just
+  // the primary one — a tight weekly cap shouldn't hide behind a healthy
+  // 5-hour badge. See lib/status.ts worstStatus + research/codex-critique.md #3.
+  const status = worstStatus(secondaryStatus ? [primaryStatus, secondaryStatus] : [primaryStatus]);
 
   return (
     <Link

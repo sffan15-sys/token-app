@@ -23,6 +23,20 @@ export function statusForUsage(
   return "good";
 }
 
+const STATUS_RANK: Record<Status, number> = { stale: 0, good: 1, watch: 2, hot: 3 };
+
+/**
+ * Combine multiple windows (e.g. five_hour AND seven_day) into a single
+ * status by taking whichever window is MOST constrained, not just the
+ * first/primary one. Fixes the bug flagged in research/codex-critique.md
+ * #3: a "Healthy" 5-hour badge could otherwise hide a tight weekly cap
+ * entirely, because callers only ever looked at meta.windows[0].
+ */
+export function worstStatus(statuses: Status[]): Status {
+  if (statuses.length === 0) return "stale";
+  return statuses.reduce((worst, s) => (STATUS_RANK[s] > STATUS_RANK[worst] ? s : worst), statuses[0]);
+}
+
 export const STATUS_LABEL: Record<Status, string> = {
   good: "Healthy",
   watch: "Watch",
