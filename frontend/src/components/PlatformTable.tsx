@@ -98,10 +98,10 @@ export function PlatformTable({ platforms, records }: { platforms: PlatformMeta[
   const rows = platforms.map((meta) => buildRow(meta, records));
 
   return (
-    <div className="overflow-x-auto rounded-xl border" style={{ borderColor: "var(--border)", background: "var(--surface-card)" }}>
+    <div className="overflow-x-auto">
       <table className="w-full min-w-[640px] border-collapse text-sm">
         <thead>
-          <tr style={{ borderBottom: "1px solid var(--border)" }}>
+          <tr style={{ borderBottom: "1px solid var(--border)", borderTop: "1px solid var(--border)" }}>
             {["Platform", "Status", "5hr / primary", "Weekly / secondary", "Reset in", "Monthly cost"].map((h) => (
               <th
                 key={h}

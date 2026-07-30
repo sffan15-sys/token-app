@@ -23,7 +23,10 @@ export function AlertStrip({ alerts }: { alerts: Alert[] }) {
   if (active.length === 0) return null;
 
   return (
-    <div className="flex flex-col divide-y overflow-hidden rounded-md border text-sm" style={{ borderColor: "var(--border)" }}>
+    <div
+      className="flex flex-col divide-y border-t border-b text-sm"
+      style={{ borderColor: "var(--border)" }}
+    >
       {active.map((alert) => {
         const colors = SEVERITY_VAR[alert.severity];
         return (
