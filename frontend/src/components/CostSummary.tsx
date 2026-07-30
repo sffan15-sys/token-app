@@ -18,7 +18,7 @@ export function CostSummary({ records }: { records: UsageRecord[] }) {
   const total = flatTotal + meteredTotal;
 
   return (
-    <div className="rounded-xl border p-4" style={{ background: "var(--surface-card)", borderColor: "var(--border)" }}>
+    <div className="border-t pt-3" style={{ borderColor: "var(--border)" }}>
       <div className="text-sm font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
         This month's AI spend
       </div>
