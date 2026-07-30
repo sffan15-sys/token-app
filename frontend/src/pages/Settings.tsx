@@ -13,14 +13,19 @@ export function Settings() {
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [manualPlatform, setManualPlatform] = useState(PLATFORMS.find((p) => p.tier === "manual")?.id ?? "");
   const [manualValue, setManualValue] = useState("");
+  const [manualBusinessTag, setManualBusinessTag] = useState("");
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
 
   const manualPlatforms = PLATFORMS.filter((p) => p.tier === "manual");
 
   function logReading() {
     if (!manualValue) return;
-    setSavedMsg(`Logged ${manualValue}% for ${PLATFORMS.find((p) => p.id === manualPlatform)?.label} (mock — not persisted).`);
+    const tagSuffix = manualBusinessTag.trim() ? ` for ${manualBusinessTag.trim()}` : "";
+    setSavedMsg(
+      `Logged ${manualValue}% for ${PLATFORMS.find((p) => p.id === manualPlatform)?.label}${tagSuffix} (mock — not persisted).`
+    );
     setManualValue("");
+    setManualBusinessTag("");
     setTimeout(() => setSavedMsg(null), 3000);
   }
 
@@ -64,6 +69,14 @@ export function Settings() {
             value={manualValue}
             onChange={(e) => setManualValue(e.target.value)}
             className="w-24 rounded-md border px-2 py-1.5 text-sm tabular"
+            style={{ borderColor: "var(--border)", background: "var(--surface-raised)", color: "var(--text-primary)" }}
+          />
+          <input
+            type="text"
+            placeholder="Business/project (optional)"
+            value={manualBusinessTag}
+            onChange={(e) => setManualBusinessTag(e.target.value)}
+            className="w-48 rounded-md border px-2 py-1.5 text-sm"
             style={{ borderColor: "var(--border)", background: "var(--surface-raised)", color: "var(--text-primary)" }}
           />
           <button

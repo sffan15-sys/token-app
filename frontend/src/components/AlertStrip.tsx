@@ -40,7 +40,14 @@ export function AlertStrip({ alerts }: { alerts: Alert[] }) {
               className="mt-0.5 h-2 w-2 shrink-0 rounded-full"
               style={{ background: `var(${colors.fg})` }}
             />
-            <span className="flex-1">{alert.message}</span>
+            <span className="flex-1">
+              {alert.message}
+              {alert.businessTag && (
+                <span className="ml-1.5 font-medium" style={{ color: `var(${colors.fg})` }}>
+                  — affects {alert.businessTag}'s active work
+                </span>
+              )}
+            </span>
             <span className="shrink-0 text-xs tabular" style={{ color: "var(--text-muted)" }}>
               {formatRelativeTime(alert.created_at)}
             </span>

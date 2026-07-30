@@ -33,9 +33,17 @@ export function Alerts() {
           >
             <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background: `var(${SEVERITY_VAR[a.severity]})` }} />
             <div className="flex-1">
-              <div style={{ color: "var(--text-primary)" }}>{a.message}</div>
+              <div style={{ color: "var(--text-primary)" }}>
+                {a.message}
+                {a.businessTag && (
+                  <span className="ml-1.5 font-medium" style={{ color: `var(${SEVERITY_VAR[a.severity]})` }}>
+                    — affects {a.businessTag}'s active work
+                  </span>
+                )}
+              </div>
               <div className="mt-0.5 text-xs" style={{ color: "var(--text-muted)" }}>
                 {a.platform} · {a.kind.replace(/_/g, " ")} · {formatRelativeTime(a.created_at)}
+                {a.businessTag && ` · ${a.businessTag}`}
                 {!a.active && " · resolved"}
               </div>
             </div>
