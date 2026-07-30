@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import { PLATFORMS } from "../data/mockData";
 import { isPoolPlatform, poolSnapshot, snapshotForWindow } from "../lib/selectors";
 import { formatDuration, formatPercent } from "../lib/format";
-import type { UsageRecord } from "../types";
+import type { PlatformMeta, UsageRecord } from "../types";
 
 /**
  * AI capacity destinations only — Vercel is infra/hosting, not an
@@ -14,6 +14,15 @@ const AI_TASK_PLATFORM_IDS = new Set(["claude", "codex", "gemini", "cursor"]);
 const HEADROOM_THRESHOLD = 40; // usedPercent below this = "healthy headroom" baseline
 /** Below this much time left in the window, don't call it "safe" no matter how low used% is. */
 const MIN_SAFE_TIME_REMAINING_MS = 20 * 60 * 1000;
+
+/** Rough $/remaining-capacity-point: lower is cheaper to burn. Flat-subscription
+ * platforms only — usage-based cost isn't meaningfully comparable the same way. */
+function costPerRemainingPoint(meta: PlatformMeta, usedPercent: number): number | null {
+  if (!meta.monthlyCostUsd) return null;
+  const remainingPercent = 100 - usedPercent;
+  if (remainingPercent <= 0) return null;
+  return meta.monthlyCostUsd / remainingPercent;
+}
 
 /**
  * "Paid-for-and-idle right now" rollup — CLAUDE.md calls this out
@@ -45,6 +54,11 @@ export function IdleHeadroomPanel({ records }: { records: UsageRecord[] }) {
       return true;
     });
 
+  const cheapest = candidates
+    .map((c) => ({ ...c, costPerPoint: c.usedPercent !== null ? costPerRemainingPoint(c.meta, c.usedPercent) : null }))
+    .filter((c) => c.costPerPoint !== null)
+    .sort((a, b) => a.costPerPoint! - b.costPerPoint!)[0];
+
   return (
     <div className="rounded-xl border p-4" style={{ background: "var(--surface-card)", borderColor: "var(--border)" }}>
       <div className="text-sm font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
@@ -60,19 +74,30 @@ export function IdleHeadroomPanel({ records }: { records: UsageRecord[] }) {
           Nothing has meaningful, time-safe headroom right now.
         </div>
       ) : (
-        <div className="flex flex-wrap gap-2">
-          {candidates.map((c) => (
-            <Link
-              key={c.meta.id}
-              to={`/platform/${c.meta.id}`}
-              className="rounded-full border px-3 py-1 text-xs font-medium tabular"
-              style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
-            >
-              {c.meta.label} · {formatPercent(c.usedPercent!)} used
-              {c.msRemaining !== null && c.msRemaining >= 0 ? ` · ${formatDuration(c.msRemaining)} left` : ""}
-            </Link>
-          ))}
-        </div>
+        <>
+          <div className="flex flex-wrap gap-2">
+            {candidates.map((c) => (
+              <Link
+                key={c.meta.id}
+                to={`/platform/${c.meta.id}`}
+                className="rounded-full border px-3 py-1 text-xs font-medium tabular"
+                style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+              >
+                {c.meta.label} · {formatPercent(c.usedPercent!)} used
+                {c.msRemaining !== null && c.msRemaining >= 0 ? ` · ${formatDuration(c.msRemaining)} left` : ""}
+              </Link>
+            ))}
+          </div>
+          {cheapest && (
+            <div className="mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
+              Cheapest headroom right now:{" "}
+              <span className="font-medium" style={{ color: "var(--text-secondary)" }}>
+                {cheapest.meta.label}
+              </span>{" "}
+              (~${cheapest.costPerPoint!.toFixed(2)} of subscription per remaining % of window)
+            </div>
+          )}
+        </>
       )}
     </div>
   );
