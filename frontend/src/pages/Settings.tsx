@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { PLATFORMS } from "../data/mockData";
-import { fetchConfigStatus, postManualLog, saveConfig, useFetch, type ConfigStatus } from "../lib/api";
+import { fetchConfigStatus, saveConfig, useFetch, type ConfigStatus } from "../lib/api";
 
 const THRESHOLDS = [
   { label: "Approaching-limit warning", value: "70% used" },
@@ -10,58 +9,76 @@ const THRESHOLDS = [
   { label: "Stale-collector meta alert", value: "No reading in 6h" },
 ];
 
-/** Only these platforms have a token this app's collectors actually read (see server/config.ts).
- * Gemini/Cursor stay manual-log-only per CLAUDE.md/SPECS.md — untouched, no config key for them. */
-const CONFIG_KEY_BY_PLATFORM: Record<string, keyof ConfigStatus> = {
-  vercel: "VERCEL_TOKEN",
-  openai: "OPENAI_API_KEY",
-  codex: "OPENAI_API_KEY", // Codex collector reads local CLI auth, not this field — see label override below.
-};
+const CONFIG_FIELDS: Array<{
+  key: keyof ConfigStatus;
+  platform: string;
+  label: string;
+  placeholder: string;
+  secret?: boolean;
+}> = [
+  {
+    key: "VERCEL_TOKEN",
+    platform: "Vercel",
+    label: "Personal access token",
+    placeholder: "VERCEL_TOKEN",
+    secret: true,
+  },
+  {
+    key: "VERCEL_TEAM_ID",
+    platform: "Vercel",
+    label: "Team ID (optional)",
+    placeholder: "VERCEL_TEAM_ID",
+  },
+  {
+    key: "OPENAI_API_KEY",
+    platform: "OpenAI",
+    label: "API key",
+    placeholder: "OPENAI_API_KEY",
+    secret: true,
+  },
+  {
+    key: "CODEX_HOME",
+    platform: "ChatGPT / Codex",
+    label: "CLI home (optional)",
+    placeholder: "Defaults to ~/.codex",
+  },
+  {
+    key: "GOOGLE_APPLICATION_CREDENTIALS",
+    platform: "Gemini",
+    label: "Service-account JSON path",
+    placeholder: "GOOGLE_APPLICATION_CREDENTIALS",
+  },
+  {
+    key: "GEMINI_GCP_PROJECT_ID",
+    platform: "Gemini",
+    label: "GCP project ID",
+    placeholder: "GEMINI_GCP_PROJECT_ID",
+  },
+];
 
 export function Settings() {
-  const { data: configStatus, reload: reloadConfig } = useFetch(fetchConfigStatus);
-  const [keys, setKeys] = useState<Record<string, string>>({});
-  const [manualPlatform, setManualPlatform] = useState(PLATFORMS.find((p) => p.tier === "manual")?.id ?? "");
-  const [manualValue, setManualValue] = useState("");
-  const [manualBusinessTag, setManualBusinessTag] = useState("");
-  const [savedMsg, setSavedMsg] = useState<string | null>(null);
-  const [keySavedMsg, setKeySavedMsg] = useState<string | null>(null);
+  const {
+    data: configStatus,
+    loading: configLoading,
+    error: configError,
+    reload: reloadConfig,
+  } = useFetch(fetchConfigStatus);
+  const [values, setValues] = useState<Partial<Record<keyof ConfigStatus, string>>>({});
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
-  const manualPlatforms = PLATFORMS.filter((p) => p.tier === "manual");
+  async function saveField(configKey: keyof ConfigStatus) {
+    const value = values[configKey];
+    if (!value) return;
 
-  async function logReading() {
-    if (!manualValue) return;
     try {
-      await postManualLog({
-        platform: manualPlatform,
-        value: Number(manualValue),
-        businessTag: manualBusinessTag.trim() || undefined,
-      });
-      const tagSuffix = manualBusinessTag.trim() ? ` for ${manualBusinessTag.trim()}` : "";
-      setSavedMsg(
-        `Logged ${manualValue}% for ${PLATFORMS.find((p) => p.id === manualPlatform)?.label}${tagSuffix}.`
-      );
-      setManualValue("");
-      setManualBusinessTag("");
-    } catch (err) {
-      setSavedMsg(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
-    }
-    setTimeout(() => setSavedMsg(null), 4000);
-  }
-
-  async function saveKey(platformId: string) {
-    const configKey = CONFIG_KEY_BY_PLATFORM[platformId];
-    const value = keys[platformId];
-    if (!configKey || value === undefined) return;
-    try {
-      await saveConfig({ [configKey]: value } as Partial<Record<keyof ConfigStatus, string>>);
-      setKeySavedMsg(`Saved. Collectors will pick this up on their next scheduled run.`);
-      setKeys((k) => ({ ...k, [platformId]: "" }));
+      await saveConfig({ [configKey]: value });
+      setSavedMessage("Saved. Collectors will use it on their next scheduled run.");
+      setValues((current) => ({ ...current, [configKey]: "" }));
       reloadConfig();
     } catch (err) {
-      setKeySavedMsg(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
+      setSavedMessage(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
     }
-    setTimeout(() => setKeySavedMsg(null), 4000);
+    setTimeout(() => setSavedMessage(null), 4000);
   }
 
   return (
@@ -71,124 +88,129 @@ export function Settings() {
           Settings
         </h1>
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-          API keys are written to a local git-ignored config file (data/local-config.json) by the
-          API server — never committed, never logged. Requires <code>npm run server</code> running.
+          Collector credentials are written to <code>data/local-config.json</code>, which is
+          gitignored. Existing values are never returned to the browser. Requires{" "}
+          <code>npm run server</code>.
         </p>
       </div>
 
-      <section className="rounded-xl border p-4" style={{ background: "var(--surface-card)", borderColor: "var(--border)" }}>
-        <h2 className="mb-3 font-semibold" style={{ color: "var(--text-primary)" }}>
-          Quick manual log
+      <section
+        className="rounded-xl border p-4"
+        style={{ background: "var(--surface-card)", borderColor: "var(--border)" }}
+      >
+        <h2 className="mb-1 font-semibold" style={{ color: "var(--text-primary)" }}>
+          Integration availability
         </h2>
-        <p className="mb-3 text-xs" style={{ color: "var(--text-muted)" }}>
-          Gemini and Cursor have no API for consumer session/usage data yet — this is the primary
-          data source for them per SPECS.md. Glance at the in-app banner, log the %, done in 2 seconds.
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={manualPlatform}
-            onChange={(e) => setManualPlatform(e.target.value)}
-            className="rounded-md border px-2 py-1.5 text-sm"
-            style={{ borderColor: "var(--border)", background: "var(--surface-raised)", color: "var(--text-primary)" }}
-          >
-            {manualPlatforms.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-          <input
-            type="number"
-            min={0}
-            max={100}
-            placeholder="% used"
-            value={manualValue}
-            onChange={(e) => setManualValue(e.target.value)}
-            className="w-24 rounded-md border px-2 py-1.5 text-sm tabular"
-            style={{ borderColor: "var(--border)", background: "var(--surface-raised)", color: "var(--text-primary)" }}
-          />
-          <input
-            type="text"
-            placeholder="Business/project (optional)"
-            value={manualBusinessTag}
-            onChange={(e) => setManualBusinessTag(e.target.value)}
-            className="w-48 rounded-md border px-2 py-1.5 text-sm"
-            style={{ borderColor: "var(--border)", background: "var(--surface-raised)", color: "var(--text-primary)" }}
-          />
-          <button
-            onClick={logReading}
-            className="rounded-md px-3 py-1.5 text-sm font-medium text-white"
-            style={{ background: "var(--series-blue)" }}
-          >
-            Log reading
-          </button>
-        </div>
-        {savedMsg && (
-          <div className="mt-2 text-xs" style={{ color: "var(--status-good)" }}>
-            {savedMsg}
+        <div className="mt-3 flex flex-col gap-3 text-sm">
+          <div className="border-t pt-3" style={{ borderColor: "var(--border)" }}>
+            <div className="font-medium" style={{ color: "var(--text-primary)" }}>
+              Gemini
+            </div>
+            <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+              Real API quota data through Google Cloud Monitoring once a Monitoring Viewer service
+              account and GCP project ID are configured below. No manual fallback.
+            </div>
           </div>
-        )}
+          <div className="border-t pt-3" style={{ borderColor: "var(--border)" }}>
+            <div className="font-medium" style={{ color: "var(--text-primary)" }}>
+              Cursor
+            </div>
+            <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+              Not connected — no API available on individual plans. Cursor's Admin API requires a
+              Team, Business, or Enterprise plan, so no usage data or manual substitute is shown.
+            </div>
+          </div>
+        </div>
       </section>
 
-      <section className="rounded-xl border p-4" style={{ background: "var(--surface-card)", borderColor: "var(--border)" }}>
+      <section
+        className="rounded-xl border p-4"
+        style={{ background: "var(--surface-card)", borderColor: "var(--border)" }}
+      >
         <h2 className="mb-3 font-semibold" style={{ color: "var(--text-primary)" }}>
-          API keys / tokens
+          Collector configuration
         </h2>
         <div className="flex flex-col gap-3">
-          {PLATFORMS.map((p) => {
-            const configKey = CONFIG_KEY_BY_PLATFORM[p.id];
-            const isSet = configKey && configStatus ? configStatus[configKey] : false;
-            const disabled = p.tier === "manual" || !configKey;
-            const placeholder =
-              p.id === "codex"
-                ? "reads Codex CLI's own local login — nothing to paste here"
-                : disabled
-                  ? "no API available — manual log only"
-                  : isSet
-                    ? "•••••••• (saved — paste a new value to replace)"
-                    : "paste token…";
+          {CONFIG_FIELDS.map((field) => {
+            const isSet = configStatus?.[field.key] ?? false;
             return (
-              <div key={p.id} className="flex items-center gap-3">
-                <label className="w-40 shrink-0 text-sm" style={{ color: "var(--text-secondary)" }}>
-                  {p.label}
-                  {isSet && <span className="ml-1 text-xs" style={{ color: "var(--status-good)" }}>●</span>}
+              <div
+                key={field.key}
+                className="grid gap-1 sm:grid-cols-[9rem_11rem_1fr_auto] sm:items-center sm:gap-3"
+              >
+                <div className="text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
+                  {field.platform}
+                  {isSet && (
+                    <span className="ml-1 text-xs" style={{ color: "var(--status-good)" }}>
+                      ●
+                    </span>
+                  )}
+                </div>
+                <label
+                  className="text-xs"
+                  htmlFor={field.key}
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  {field.label}
                 </label>
                 <input
-                  type="password"
-                  placeholder={placeholder}
-                  disabled={disabled || p.id === "codex"}
-                  value={keys[p.id] ?? ""}
-                  onChange={(e) => setKeys((k) => ({ ...k, [p.id]: e.target.value }))}
-                  className="flex-1 rounded-md border px-2 py-1.5 text-sm disabled:opacity-50"
-                  style={{ borderColor: "var(--border)", background: "var(--surface-raised)", color: "var(--text-primary)" }}
+                  id={field.key}
+                  type={field.secret ? "password" : "text"}
+                  placeholder={
+                    isSet ? "Configured — enter a new value to replace" : field.placeholder
+                  }
+                  value={values[field.key] ?? ""}
+                  onChange={(event) =>
+                    setValues((current) => ({
+                      ...current,
+                      [field.key]: event.target.value,
+                    }))
+                  }
+                  className="min-w-0 rounded-md border px-2 py-1.5 text-sm"
+                  style={{
+                    borderColor: "var(--border)",
+                    background: "var(--surface-raised)",
+                    color: "var(--text-primary)",
+                  }}
                 />
-                {!disabled && p.id !== "codex" && (
-                  <button
-                    onClick={() => saveKey(p.id)}
-                    className="rounded-md px-2.5 py-1.5 text-xs font-medium text-white"
-                    style={{ background: "var(--series-blue)" }}
-                  >
-                    Save
-                  </button>
-                )}
+                <button
+                  onClick={() => void saveField(field.key)}
+                  disabled={!values[field.key]}
+                  className="rounded-md px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-40"
+                  style={{ background: "var(--series-blue)" }}
+                >
+                  Save
+                </button>
               </div>
             );
           })}
         </div>
-        {keySavedMsg && (
+        {configLoading && (
+          <div className="mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
+            Checking saved configuration…
+          </div>
+        )}
+        {configError && (
+          <div className="mt-2 text-xs" style={{ color: "var(--status-critical)" }}>
+            Could not read configuration status: {configError}
+          </div>
+        )}
+        {savedMessage && (
           <div className="mt-2 text-xs" style={{ color: "var(--status-good)" }}>
-            {keySavedMsg}
+            {savedMessage}
           </div>
         )}
         <p className="mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
-          Manual fallback if the UI can't reach the server: set the env var directly (
-          <code>VERCEL_TOKEN</code>, <code>OPENAI_API_KEY</code>) before running{" "}
-          <code>npm run collect:*</code>, or edit <code>data/local-config.json</code> by hand — see
-          README.md.
+          If the UI cannot reach the server, set the same environment variables before running{" "}
+          <code>npm run collect:*</code>, or edit <code>data/local-config.json</code> directly.
+          This is a credential setup fallback, not a manual usage-log path.
         </p>
       </section>
 
-      <section className="rounded-xl border p-4" style={{ background: "var(--surface-card)", borderColor: "var(--border)" }}>
+      <section
+        className="rounded-xl border p-4"
+        style={{ background: "var(--surface-card)", borderColor: "var(--border)" }}
+      >
         <h2 className="mb-1 font-semibold" style={{ color: "var(--text-primary)" }}>
           Alert thresholds
         </h2>
@@ -196,11 +218,15 @@ export function Settings() {
           Read-only for now — editable once the alert engine exists server-side.
         </p>
         <div className="flex flex-col gap-2 text-sm">
-          {THRESHOLDS.map((t) => (
-            <div key={t.label} className="flex items-center justify-between border-t pt-2" style={{ borderColor: "var(--border)" }}>
-              <span style={{ color: "var(--text-secondary)" }}>{t.label}</span>
+          {THRESHOLDS.map((threshold) => (
+            <div
+              key={threshold.label}
+              className="flex items-center justify-between border-t pt-2"
+              style={{ borderColor: "var(--border)" }}
+            >
+              <span style={{ color: "var(--text-secondary)" }}>{threshold.label}</span>
               <span className="tabular" style={{ color: "var(--text-primary)" }}>
-                {t.value}
+                {threshold.value}
               </span>
             </div>
           ))}

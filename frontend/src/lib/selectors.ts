@@ -53,7 +53,7 @@ export function pastWindowPeaks(records: UsageRecord[], platform: string, window
     .reverse();
 }
 
-/** For $-pool style platforms (Vercel, Cursor): latest cost record + included-usd cap record. */
+/** For $-pool style platforms (currently Vercel): latest cost record + included-usd cap record. */
 export function poolSnapshot(records: UsageRecord[], platform: string) {
   const costRecords = records
     .filter((r) => r.platform === platform && r.metric === "billing_period_cost")
@@ -66,5 +66,5 @@ export function poolSnapshot(records: UsageRecord[], platform: string) {
 }
 
 export function isPoolPlatform(meta: PlatformMeta): boolean {
-  return meta.windows.some((w) => w.key === "billing_period");
+  return meta.dataMode === "pool";
 }

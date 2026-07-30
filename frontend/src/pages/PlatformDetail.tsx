@@ -20,6 +20,15 @@ const SERIES_VAR: Record<string, string> = {
 export function PlatformDetail() {
   const { platformId } = useParams<{ platformId: string }>();
   const meta = PLATFORMS.find((p) => p.id === platformId);
+  const metaId = meta?.id ?? "";
+  const dataMode = meta?.dataMode;
+  const { data: records, loading, error } = useFetch(
+    () =>
+      !meta || dataMode === "unavailable"
+        ? Promise.resolve([] as UsageRecord[])
+        : fetchPlatformUsage(metaId),
+    [metaId, dataMode]
+  );
 
   if (!meta) {
     return (
@@ -34,8 +43,6 @@ export function PlatformDetail() {
 
   const color = `var(${SERIES_VAR[meta.color]})`;
   const pooled = isPoolPlatform(meta);
-
-  const { data: records, loading, error } = useFetch(() => fetchPlatformUsage(meta.id), [meta.id]);
 
   if (loading) {
     return (
@@ -68,19 +75,28 @@ export function PlatformDetail() {
             {meta.label}
           </h1>
           <span className="text-xs" style={{ color: "var(--text-muted)" }}>
-            {meta.tier === "manual" ? "Manual log source" : "Auto-synced collector"}
+            {meta.dataMode === "unavailable"
+              ? "Not connected — no API available on individual plans"
+              : meta.dataMode === "quota"
+                ? "Auto-synced via Google Cloud Monitoring"
+                : meta.tier === "manual"
+                  ? "Manual log source"
+                  : "Auto-synced collector"}
           </span>
         </div>
       </div>
 
-      {pooled ? (
+      {meta.dataMode === "unavailable" ? (
+        <UnavailableDetail />
+      ) : meta.dataMode === "quota" ? (
+        <QuotaDetail records={usageRecords} />
+      ) : pooled ? (
         <PoolDetail platformId={meta.id} color={color} records={usageRecords} />
       ) : (
         <div className="flex flex-col gap-6">
           {usageRecords.length === 0 && (
             <div className="rounded-lg border p-3 text-xs" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
-              No readings yet for {meta.label}. Run its collector, or log a reading in Settings if
-              it's manual-log only.
+              No readings yet for {meta.label}. Run its collector to populate this view.
             </div>
           )}
           {meta.windows.map((w) => {
@@ -151,6 +167,126 @@ export function PlatformDetail() {
   );
 }
 
+function UnavailableDetail() {
+  return (
+    <section
+      className="rounded-xl border p-4"
+      style={{ background: "var(--surface-card)", borderColor: "var(--border)" }}
+    >
+      <StatusPill status="stale" text="Not connected" />
+      <h2 className="mt-3 font-semibold" style={{ color: "var(--text-primary)" }}>
+        No API available on individual Cursor plans
+      </h2>
+      <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+        Cursor exposes usage through its Admin API only for Team, Business, and Enterprise
+        accounts. This app intentionally shows no fabricated usage and offers no manual-log
+        substitute. If this account later gains team-tier API access, Cursor can be connected here.
+      </p>
+    </section>
+  );
+}
+
+function QuotaDetail({ records }: { records: UsageRecord[] }) {
+  const quotaRecords = records.filter((record) => record.metric.startsWith("quota."));
+  const newestFirst = [...quotaRecords].sort((a, b) => b.fetched_at.localeCompare(a.fetched_at));
+  const latestByMetric = new Map<string, UsageRecord>();
+  for (const record of newestFirst) {
+    if (!latestByMetric.has(record.metric)) latestByMetric.set(record.metric, record);
+  }
+  const rows = [...latestByMetric.values()].slice(0, 50);
+  const latestFetchedAt = newestFirst[0]?.fetched_at ?? null;
+  const status = statusForUsage(latestFetchedAt ? 0 : null, latestFetchedAt, "live");
+
+  return (
+    <div className="flex flex-col gap-6">
+      <section
+        className="rounded-xl border p-4"
+        style={{ background: "var(--surface-card)", borderColor: "var(--border)" }}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-semibold" style={{ color: "var(--text-primary)" }}>
+            Gemini API quota metrics
+          </h2>
+          <StatusPill
+            status={status}
+            text={latestFetchedAt ? "Collector active" : "No data yet"}
+          />
+        </div>
+        <p className="mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
+          Real <code>serviceruntime.googleapis.com/quota/*</code> telemetry for direct Gemini API
+          and Vertex AI routes. These are quota usage, limit, and exceeded counts—not a fabricated
+          consumer-session percentage.
+        </p>
+
+        {rows.length === 0 ? (
+          <div
+            className="mt-4 rounded-lg border p-3 text-xs"
+            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
+          >
+            No data yet. Save the Gemini fields in Settings, then start{" "}
+            <code>npm run server</code> for scheduled collection or run{" "}
+            <code>npm run collect:gemini</code> once. Any credential or response error is written
+            to collector_errors and shown on the Alerts page.
+          </div>
+        ) : (
+          <>
+            <div className="mt-4 text-sm" style={{ color: "var(--text-secondary)" }}>
+              <span className="font-medium tabular" style={{ color: "var(--text-primary)" }}>
+                {rows.length}
+              </span>{" "}
+              current quota series · updated {formatRelativeTime(latestFetchedAt!)}
+            </div>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[620px] text-left text-sm">
+                <thead>
+                  <tr style={{ color: "var(--text-muted)" }}>
+                    <th className="py-1 pr-4 font-normal">Route</th>
+                    <th className="py-1 pr-4 font-normal">Quota metric</th>
+                    <th className="py-1 pr-4 font-normal">Value</th>
+                    <th className="py-1 font-normal">Observed</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((record) => (
+                    <tr
+                      key={record.metric}
+                      className="border-t"
+                      style={{ borderColor: "var(--border)" }}
+                    >
+                      <td className="py-1.5 pr-4" style={{ color: "var(--text-secondary)" }}>
+                        {record.metric.startsWith("quota.direct.") ? "Gemini API" : "Vertex AI"}
+                      </td>
+                      <td
+                        className="max-w-md py-1.5 pr-4 font-mono text-xs"
+                        style={{ color: "var(--text-secondary)" }}
+                      >
+                        {record.metric.replace(/^quota\.(direct|vertex)\./, "")}
+                      </td>
+                      <td
+                        className="py-1.5 pr-4 tabular"
+                        style={{ color: "var(--text-primary)" }}
+                      >
+                        {record.value.toLocaleString()} {record.unit}
+                      </td>
+                      <td
+                        className="py-1.5 tabular text-xs"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        {formatShortTime(record.window_end)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </section>
+      {quotaRecords.length > 0 && <RawReadingsTable records={quotaRecords} />}
+    </div>
+  );
+}
+
 function PoolDetail({ platformId, color, records }: { platformId: string; color: string; records: UsageRecord[] }) {
   const snap = poolSnapshot(records, platformId);
   const status = statusForUsage(snap.usedPercent, snap.latest?.fetched_at ?? null, "slow");
@@ -172,7 +308,9 @@ function PoolDetail({ platformId, color, records }: { platformId: string; color:
               ${snap.latest?.value.toFixed(2) ?? "0.00"} of ${snap.cap?.toFixed(0) ?? "—"} included usage spent
             </div>
             <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-              {snap.latest ? `Last logged ${formatRelativeTime(snap.latest.fetched_at)}` : "No spend logged yet"}
+              {snap.latest
+                ? `Last collected ${formatRelativeTime(snap.latest.fetched_at)}`
+                : "No spend data yet"}
             </div>
           </div>
         </div>

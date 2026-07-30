@@ -33,6 +33,16 @@ per-platform data source research.
     logged as a warning
   - Run via `npm run collect:vercel` (needs `VERCEL_TOKEN` env var, and
     optionally `VERCEL_TEAM_ID`).
+- **Gemini API collector** (`collectors/gemini/collect.ts`): exchanges a
+  service-account JWT for a Monitoring-read access token, then paginates
+  Cloud Monitoring `projects.timeSeries.list` for the documented
+  `serviceruntime.googleapis.com/quota/*` metric family. It reads both
+  `generativelanguage.googleapis.com` (direct Gemini/AI Studio) and
+  `aiplatform.googleapis.com` (Vertex AI) `consumer_quota` resources,
+  normalizes numeric and boolean points into `usage_records`, and logs
+  missing credentials/project IDs or malformed responses to
+  `collector_errors` without crashing. Run via `npm run collect:gemini`;
+  needs `GOOGLE_APPLICATION_CREDENTIALS` and `GEMINI_GCP_PROJECT_ID`.
 - **Claude Code statusline collector** (`collectors/claude/statusline.ts`):
   reads the JSON payload Claude Code passes on stdin to the `statusLine`
   hook, defensively validates `rate_limits.five_hour` /
@@ -44,8 +54,8 @@ per-platform data source research.
   `invalid_shape`) instead of crashing or dropping the read, and still
   prints a visible placeholder on the status line rather than going blank.
 
-Both collectors were exercised directly (piping sample JSON to the
-statusline script; running the Vercel collector with no token) and confirm
+The Claude and Vercel defensive paths were exercised directly (piping
+sample JSON to the statusline script; running Vercel with no token) and confirm
 error rows land in `collector_errors` and valid data lands in
 `usage_records` as expected — see verification commands below.
 
@@ -58,6 +68,12 @@ error rows land in `collector_errors` and valid data lands in
   body shape, and whether a Hobby-plan team actually 403s (vs. some other
   status) are unconfirmed. Set `VERCEL_TOKEN` (and optionally
   `VERCEL_TEAM_ID`) and run `npm run collect:vercel` to verify.
+- **Gemini API**: the Cloud Monitoring endpoint, per-request exact metric
+  filters, `consumer_quota` service filter, service-account OAuth flow, and
+  TimeSeries/TypedValue shapes are verified against current official Google
+  documentation. No GCP service-account credential is available on this
+  machine, so the OAuth exchange, real Gemini quota label values, and live
+  response bytes still need one run with a Monitoring Viewer account.
 - **Claude statusline**: the parsing/validation logic was tested with
   hand-written sample payloads only (see commands below), not a real
   payload from a live Claude Code session. The hook is not yet wired into
@@ -122,20 +138,22 @@ actually reads from it, instead of `frontend/src/data/mockData.ts`.
     (`?limit=` caps rows, default 2000).
   - `GET /api/errors` — recent `collector_errors` rows.
   - `POST /api/manual-log` — `{ platform, value, businessTag? }` (matches
-    Settings.tsx's manual-log form); also accepts optional
-    `metric`/`unit`/`window_start`/`window_end` overrides.
+    the generic storage schema); also accepts optional
+    `metric`/`unit`/`window_start`/`window_end` overrides. The endpoint is
+    retained for other legitimate/manual sources, but Gemini and Cursor have
+    no manual-log UI or fallback.
   - `GET /api/config` / `POST /api/config` — read/write which API
     keys are set (GET returns booleans only, never values).
 - **`server/config.ts`** — local plaintext key storage at
   `data/local-config.json` (under the already-gitignored `/data/`
   directory — double-checked it never gets committed). `applyConfigToEnv()`
-  copies saved keys into `process.env` so `npm run collect:*`,
-  `npm run server`, and the scheduler all pick them up without the owner
-  exporting env vars by hand. Values are never logged or printed anywhere
-  (checked all three collectors for accidental token logging — none found;
+  copies saved keys into `process.env` so direct `npm run collect:*`,
+  `npm run server`, and scheduled collector runs pick them up without the
+  owner exporting env vars by hand. Values are never logged or printed anywhere
+  (checked all collectors for accidental token logging — none found;
   they only log a masked/absent-token message).
-- **`server/scheduler.ts`** — `setInterval`-based runner: Vercel + OpenAI
-  every 30 min, Codex every 15 min. Claude is deliberately **not** in this
+- **`server/scheduler.ts`** — `setInterval`-based runner: Vercel + OpenAI +
+  Gemini every 30 min, Codex every 15 min. Claude is deliberately **not** in this
   loop — it's a `statusLine` hook Claude Code itself invokes on every turn
   (push, not poll), so polling it makes no sense; see the statusline
   section above for its own wiring. Every job is wrapped in try/catch so a
@@ -160,10 +178,12 @@ actually reads from it, instead of `frontend/src/data/mockData.ts`.
   baseline/burn-rate anomaly engine (CLAUDE.md Step 3/4 says "not
   started"), so burn-rate/idle-allowance/window-refreshed alert kinds
   aren't produced yet.
-  `frontend/src/data/mockData.ts` is unchanged in shape but re-scoped: its
+  `frontend/src/data/mockData.ts` is re-scoped: its
   `PLATFORMS` export is real static UI metadata and is still used; only
-  `MOCK_USAGE_RECORDS`/`MOCK_ALERTS` are dev-only fakes, no longer
-  rendered by the running app (see the comment at the top of that file).
+  `MOCK_USAGE_RECORDS`/`MOCK_ALERTS` are dev-only fakes, no longer rendered
+  by the running app. Gemini and Cursor have no fake records: Gemini renders
+  real quota rows or "No data yet", while Cursor reads "Not connected — no
+  API available on individual plans."
 
 ### Running this end-to-end
 
@@ -179,9 +199,9 @@ npm run server:no-scheduler
 
 # 3. frontend dev server (separate terminal)
 cd frontend && npm run dev
-# open the printed localhost URL — Settings > API keys/tokens is where
-# VERCEL_TOKEN / OPENAI_API_KEY actually get saved now (POST /api/config),
-# instead of hand-editing files. Codex reads its own CLI login
+# open the printed localhost URL — Settings > Collector configuration is
+# where VERCEL_TOKEN / OPENAI_API_KEY and Gemini's credential path/project ID
+# get saved (POST /api/config). Codex reads its own CLI login
 # (~/.codex/auth.json) automatically, nothing to paste for it.
 ```
 
@@ -191,11 +211,13 @@ server — start it with `npm run server`" message rather than a blank
 crash. Override the API base with `VITE_API_BASE` if the server isn't on
 the default port.
 
-**Manual fallback for API keys** if the Settings UI path has issues: set
+**Credential-setup fallback** if the Settings UI path has issues: set
 `VERCEL_TOKEN` / `OPENAI_API_KEY` (and optionally `VERCEL_TEAM_ID`,
-`CODEX_HOME`) as real env vars before running `npm run collect:*` /
+`CODEX_HOME`) plus Gemini's `GOOGLE_APPLICATION_CREDENTIALS` /
+`GEMINI_GCP_PROJECT_ID` as real env vars before running `npm run collect:*` /
 `npm run server`, or hand-edit `data/local-config.json` directly (same
 shape `POST /api/config` writes — plain JSON, gitignored, never logged).
+This is not a manual usage-log fallback.
 
 ### What's verified vs not (this pass)
 
@@ -208,17 +230,20 @@ Verified locally (no external credentials required):
   and `POST /api/config` round-trip correctly (curl-tested); saved config
   values confirmed present in `data/local-config.json` and confirmed
   *absent* from anything printed to the console.
-- Scheduler starts, runs all three interval jobs immediately, and — with
-  no `VERCEL_TOKEN`/`OPENAI_API_KEY` configured on this machine — correctly
-  logs `missing_token` errors to `collector_errors` instead of crashing the
-  process. The Codex job, notably, **succeeded for real** against this
+- Scheduler starts and isolates every interval job. With no
+  `VERCEL_TOKEN`/`OPENAI_API_KEY`/Gemini GCP configuration on this machine,
+  collectors correctly log missing-configuration errors to
+  `collector_errors` instead of crashing the process. The Codex job,
+  notably, **succeeded for real** against this
   machine's already-logged-in Codex CLI session and wrote a live record —
   the first real end-to-end proof this pipeline works end to end, not just
   against synthetic data.
 
-Not verified (no `VERCEL_TOKEN`/Admin `OPENAI_API_KEY` available in this
+Not verified (no `VERCEL_TOKEN`/Admin `OPENAI_API_KEY`/GCP Monitoring
+service account available in this
 environment): Vercel collector against a real Pro/Enterprise team, OpenAI
-organization-usage endpoint against a real Admin key, and the frontend
+organization-usage endpoint against a real Admin key, Gemini Cloud
+Monitoring against a real project, and the frontend
 rendering real (not empty) usage data end-to-end in a browser — the API
 shapes were confirmed by curl and the `useFetch`/selector code is unchanged
 from what already worked against `MOCK_USAGE_RECORDS` (same `UsageRecord[]`
@@ -232,8 +257,8 @@ shape in, same components), but an actual browser render was not screenshot
 2. Wire the statusline script into `~/.claude/settings.json` and confirm
    the real payload shape against `SPECS.md` section 1a during a live
    session; adjust field validation if the shape differs.
-3. Build the manual-log fallback for Gemini/Cursor/ChatGPT consumer tiers
-   (per CLAUDE.md next actions), reusing the same `usage_records`/
-   `collector_errors` schema.
-4. Layer a scheduler (cron/Task Scheduler/Vercel cron) on top of
-   `collect:vercel` once verified live.
+3. Configure a Monitoring Viewer service account and
+   `GEMINI_GCP_PROJECT_ID`, then run `npm run collect:gemini` once to verify
+   real quota labels/response bytes. Gemini has no manual fallback.
+4. Keep Cursor unavailable on an individual plan. Revisit only if the
+   account gains Team/Business/Enterprise Admin API access.

@@ -105,6 +105,11 @@ Don't build the scraper first. Build the manual-log + official-API path
 first, get the intelligence layer working and useful on real data, then
 layer in scraping only where it's clearly worth the account risk.
 
+Project-owner override for Gemini/Cursor (2026-07-30): "nothing manual;
+plumb it up for the API or nothing at all." Gemini API usage now has a real
+Cloud Monitoring collector. Cursor has no viable individual-plan API and is
+therefore listed as unavailable with no manual/fake data path.
+
 ## Step 2: information to surface
 
 Per platform, and rolled up:
@@ -181,9 +186,10 @@ training knowledge). Rough shape anticipated:
    other high-confidence source. Not yet wired into
    `~/.claude/settings.json` or tested against a real Claude Code session
    payload — see README.md.
-3. Add manual-log capture for Claude/ChatGPT/Gemini session %, to start
-   collecting baseline data immediately while proper integrations are
-   evaluated. **Not started.**
+3. If still useful, add manual-log capture for Claude/ChatGPT consumer
+   session % only. **Not started.** Gemini and Cursor are explicitly excluded:
+   Gemini uses its real API collector; Cursor stays unavailable until a viable
+   individual-account API exists.
 4. Build the baseline/anomaly + alert logic against whatever real data
    exists, iterate from there. **Not started** — blocked on getting at
    least one collector verified against live data.

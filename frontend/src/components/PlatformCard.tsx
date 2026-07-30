@@ -32,6 +32,59 @@ export function PlatformCard({ meta, records }: { meta: PlatformMeta; records: U
   const seriesColor = `var(${SERIES_VAR[meta.color]})`;
   const pooled = isPoolPlatform(meta);
 
+  if (meta.dataMode === "unavailable") {
+    return (
+      <Link
+        to={`/platform/${meta.id}`}
+        className="group flex flex-col gap-3 rounded-xl border p-4 transition-colors hover:border-[var(--border-strong)]"
+        style={{ background: "var(--surface-card)", borderColor: "var(--border)" }}
+      >
+        <div className="flex items-center justify-between">
+          <div className="font-semibold" style={{ color: "var(--text-primary)" }}>
+            {meta.label}
+          </div>
+          <StatusPill status="stale" text="Not connected" />
+        </div>
+        <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
+          {meta.connectionNote ?? "No API integration is available."}
+        </div>
+      </Link>
+    );
+  }
+
+  if (meta.dataMode === "quota") {
+    const platformRecords = records
+      .filter((record) => record.platform === meta.id && record.metric.startsWith("quota."))
+      .sort((a, b) => b.fetched_at.localeCompare(a.fetched_at));
+    const latest = platformRecords[0] ?? null;
+    const status = statusForUsage(latest ? 0 : null, latest?.fetched_at ?? null, "live");
+    const metricCount = new Set(platformRecords.map((record) => record.metric)).size;
+    return (
+      <Link
+        to={`/platform/${meta.id}`}
+        className="group flex flex-col gap-3 rounded-xl border p-4 transition-colors hover:border-[var(--border-strong)]"
+        style={{ background: "var(--surface-card)", borderColor: "var(--border)" }}
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-semibold" style={{ color: "var(--text-primary)" }}>
+              {meta.label}
+            </div>
+            <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+              Google Cloud Monitoring quota metrics
+            </div>
+          </div>
+          <StatusPill status={status} text={latest ? "Collector active" : "No data yet"} />
+        </div>
+        <div className="text-sm" style={{ color: "var(--text-secondary)" }}>
+          {latest
+            ? `${metricCount} quota metric${metricCount === 1 ? "" : "s"} · updated ${formatRelativeTime(latest.fetched_at)}`
+            : "No quota readings yet — run the Gemini collector."}
+        </div>
+      </Link>
+    );
+  }
+
   if (pooled) {
     const snap = poolSnapshot(records, meta.id);
     const status = statusForUsage(snap.usedPercent, snap.latest?.fetched_at ?? null, "slow");

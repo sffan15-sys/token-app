@@ -9,19 +9,73 @@ import type { PlatformMeta, UsageRecord } from "../types";
 interface Row {
   meta: PlatformMeta;
   status: ReturnType<typeof statusForUsage>;
+  statusText: string | null;
   primaryLabel: string;
   primaryPercent: number | null;
+  primaryText: string | null;
   primaryStatus: ReturnType<typeof statusForUsage>;
   secondaryLabel: string | null;
   secondaryPercent: number | null;
+  secondaryText: string | null;
   secondaryStatus: ReturnType<typeof statusForUsage> | null;
   resetText: string;
   lastLoggedText: string | null;
+  platformNote: string | null;
   monthlyCostUsd: number | null;
 }
 
 function buildRow(meta: PlatformMeta, records: UsageRecord[]): Row {
   const cadence = meta.tier === "manual" ? "slow" : "live";
+
+  if (meta.dataMode === "unavailable") {
+    return {
+      meta,
+      status: "stale",
+      statusText: "Not connected",
+      primaryLabel: "Availability",
+      primaryPercent: null,
+      primaryText: "No API available on individual plans",
+      primaryStatus: "stale",
+      secondaryLabel: null,
+      secondaryPercent: null,
+      secondaryText: "Team Admin API only",
+      secondaryStatus: null,
+      resetText: "—",
+      lastLoggedText: null,
+      platformNote: meta.connectionNote ?? null,
+      monthlyCostUsd: meta.monthlyCostUsd ?? null,
+    };
+  }
+
+  if (meta.dataMode === "quota") {
+    const platformRecords = records
+      .filter((record) => record.platform === meta.id && record.metric.startsWith("quota."))
+      .sort((a, b) => b.fetched_at.localeCompare(a.fetched_at));
+    const latest = platformRecords[0] ?? null;
+    const latestMetrics = new Set(platformRecords.map((record) => record.metric)).size;
+    const status = statusForUsage(latest ? 0 : null, latest?.fetched_at ?? null, "live");
+    return {
+      meta,
+      status,
+      statusText: latest ? "Collector active" : "No data yet",
+      primaryLabel: "Quota metrics",
+      primaryPercent: null,
+      primaryText: latest
+        ? `${latestMetrics} quota metric${latestMetrics === 1 ? "" : "s"}`
+        : "No quota readings",
+      primaryStatus: status,
+      secondaryLabel: null,
+      secondaryPercent: null,
+      secondaryText: latest
+        ? `${latest.value.toLocaleString()} ${latest.unit}`
+        : "Run the Gemini collector",
+      secondaryStatus: null,
+      resetText: latest ? formatRelativeTime(latest.fetched_at) : "—",
+      lastLoggedText: null,
+      platformNote: meta.connectionNote ?? null,
+      monthlyCostUsd: meta.monthlyCostUsd ?? null,
+    };
+  }
 
   if (isPoolPlatform(meta)) {
     const snap = poolSnapshot(records, meta.id);
@@ -29,14 +83,18 @@ function buildRow(meta: PlatformMeta, records: UsageRecord[]): Row {
     return {
       meta,
       status,
+      statusText: null,
       primaryLabel: meta.windows[0].label,
       primaryPercent: snap.usedPercent,
+      primaryText: null,
       primaryStatus: status,
       secondaryLabel: null,
       secondaryPercent: null,
+      secondaryText: null,
       secondaryStatus: null,
       resetText: "—",
       lastLoggedText: snap.latest ? formatRelativeTime(snap.latest.fetched_at) : "no data",
+      platformNote: null,
       monthlyCostUsd: meta.monthlyCostUsd ?? null,
     };
   }
@@ -69,14 +127,18 @@ function buildRow(meta: PlatformMeta, records: UsageRecord[]): Row {
   return {
     meta,
     status,
+    statusText: null,
     primaryLabel: primaryWindow.label,
     primaryPercent: primarySnap.usedPercent,
+    primaryText: null,
     primaryStatus,
     secondaryLabel: secondaryWindow?.label ?? null,
     secondaryPercent: secondarySnap?.usedPercent ?? null,
+    secondaryText: null,
     secondaryStatus,
     resetText,
     lastLoggedText: meta.tier === "manual" ? (primarySnap.lastFetchedAt ? formatRelativeTime(primarySnap.lastFetchedAt) : "not logged") : null,
+    platformNote: null,
     monthlyCostUsd: meta.monthlyCostUsd ?? null,
   };
 }
@@ -102,7 +164,7 @@ export function PlatformTable({ platforms, records }: { platforms: PlatformMeta[
       <table className="w-full min-w-[640px] border-collapse text-sm">
         <thead>
           <tr style={{ borderBottom: "1px solid var(--border)", borderTop: "1px solid var(--border)" }}>
-            {["Platform", "Status", "5hr / primary", "Weekly / secondary", "Reset in", "Monthly cost"].map((h) => (
+            {["Platform", "Status", "Primary usage", "Secondary / details", "Reset / updated", "Monthly cost"].map((h) => (
               <th
                 key={h}
                 className="whitespace-nowrap px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide"
@@ -133,15 +195,30 @@ export function PlatformTable({ platforms, records }: { platforms: PlatformMeta[
                     logged {row.lastLoggedText}
                   </div>
                 )}
+                {row.platformNote && (
+                  <div className="mt-0.5 max-w-52 text-xs" style={{ color: "var(--text-muted)" }}>
+                    {row.platformNote}
+                  </div>
+                )}
               </td>
               <td className="px-4 py-3">
-                <StatusPill status={row.status} />
+                <StatusPill status={row.status} text={row.statusText ?? undefined} />
               </td>
               <td className="px-4 py-3">
-                <UsageBar percent={row.primaryPercent} status={row.primaryStatus} />
+                {row.primaryText ? (
+                  <span className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                    {row.primaryText}
+                  </span>
+                ) : (
+                  <UsageBar percent={row.primaryPercent} status={row.primaryStatus} />
+                )}
               </td>
               <td className="px-4 py-3">
-                {row.secondaryLabel ? (
+                {row.secondaryText ? (
+                  <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                    {row.secondaryText}
+                  </span>
+                ) : row.secondaryLabel ? (
                   <UsageBar percent={row.secondaryPercent} status={row.secondaryStatus ?? "stale"} />
                 ) : (
                   <span className="text-xs" style={{ color: "var(--text-muted)" }}>

@@ -104,8 +104,10 @@ export function createApp() {
     res.json({ errors: rows });
   });
 
-  // POST /api/manual-log — matches Settings.tsx's manual-log form: platform, value (0-100 %),
-  // optional businessTag. Stores as a UsageRecord with metric "manual_used_percentage" so
+  // POST /api/manual-log — generic endpoint retained for platforms that may legitimately need
+  // manual capture in the future. Gemini and Cursor intentionally have no manual-log UI/path.
+  // Accepts platform, value (0-100 %), and optional businessTag. Stores a UsageRecord with
+  // metric "manual_used_percentage" so
   // selectors.ts's snapshotForWindow (which expects `${window.key}_used_percentage`) can find it
   // when the platform's window key is "manual"/"session"/etc — see README for the mapping note.
   app.post("/api/manual-log", (req: Request, res: Response) => {
@@ -115,6 +117,13 @@ export function createApp() {
     const metric = typeof body.metric === "string" && body.metric ? body.metric : "manual_used_percentage";
     const unit = typeof body.unit === "string" && body.unit ? body.unit : "percent";
     const businessTag = typeof body.businessTag === "string" && body.businessTag.trim() ? body.businessTag.trim() : undefined;
+
+    if (platform === "gemini" || platform === "cursor") {
+      res.status(400).json({
+        error: `${platform} does not allow manual usage logs; use its real API collector or unavailable state`,
+      });
+      return;
+    }
 
     if (!platform || Number.isNaN(value)) {
       res.status(400).json({ error: "platform (string) and value (number) are required" });

@@ -9,6 +9,7 @@
     "collect:vercel": "tsx collectors/vercel/collect.ts",
     "collect:codex": "tsx collectors/codex/collect.ts",
     "collect:openai": "tsx collectors/openai/collect.ts",
+    "collect:gemini": "tsx collectors/gemini/collect.ts",
     "statusline:claude": "tsx collectors/claude/statusline.ts",
     "server": "tsx server/index.ts",
     "server:no-scheduler": "cross-env NO_SCHEDULER=1 tsx server/index.ts",

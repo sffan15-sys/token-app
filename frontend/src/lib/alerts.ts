@@ -26,6 +26,12 @@ export function deriveAlerts(platforms: PlatformMeta[], records: UsageRecord[], 
   const now = new Date().toISOString();
 
   for (const meta of platforms) {
+    // Cursor is intentionally not integrated on individual plans, so absence
+    // of data is not a stale collector. Gemini quota metrics are not a single
+    // percentage window; its real collector failures arrive below through
+    // collector_errors instead of a fabricated "manual log overdue" alert.
+    if (meta.dataMode === "unavailable" || meta.dataMode === "quota") continue;
+
     const cadence = meta.tier === "manual" ? "slow" : "live";
 
     if (isPoolPlatform(meta)) {

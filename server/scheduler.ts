@@ -1,7 +1,7 @@
 /**
  * Periodic collector runner.
  *
- * Runs the *pollable* collectors (Vercel, Codex, OpenAI) on a fixed
+ * Runs the *pollable* collectors (Vercel, Codex, OpenAI, Gemini) on a fixed
  * interval so the owner doesn't have to manually invoke `npm run
  * collect:*`. Claude's collector is deliberately NOT included here — per
  * SPECS.md 1a it's a statusLine hook that Claude Code itself invokes on
@@ -21,6 +21,7 @@ import { applyConfigToEnv } from "./config.js";
 import { collectVercelUsage } from "../collectors/vercel/collect.js";
 import { collectCodexUsage } from "../collectors/codex/collect.js";
 import { collectOpenAiUsage } from "../collectors/openai/collect.js";
+import { collectGeminiUsage } from "../collectors/gemini/collect.js";
 
 interface ScheduledJob {
   platform: string;
@@ -34,6 +35,7 @@ const JOBS: ScheduledJob[] = [
   { platform: "vercel", intervalMs: 30 * MINUTE, run: () => collectVercelUsage() },
   { platform: "codex", intervalMs: 15 * MINUTE, run: () => collectCodexUsage() },
   { platform: "openai", intervalMs: 30 * MINUTE, run: () => collectOpenAiUsage() },
+  { platform: "gemini", intervalMs: 30 * MINUTE, run: () => collectGeminiUsage() },
 ];
 
 async function runJob(job: ScheduledJob): Promise<void> {

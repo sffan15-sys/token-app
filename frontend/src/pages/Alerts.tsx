@@ -77,8 +77,7 @@ export function Alerts() {
           ))}
           {sorted.length === 0 && (
             <div className="text-sm" style={{ color: "var(--text-muted)" }}>
-              No alerts — either everything's healthy, or there's no data yet (run a collector or
-              log a manual reading in Settings).
+              No alerts — either everything's healthy, or there's no data yet (run a collector).
             </div>
           )}
         </div>

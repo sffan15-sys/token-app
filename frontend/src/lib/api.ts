@@ -25,6 +25,8 @@ export interface ConfigStatus {
   VERCEL_TEAM_ID: boolean;
   OPENAI_API_KEY: boolean;
   CODEX_HOME: boolean;
+  GOOGLE_APPLICATION_CREDENTIALS: boolean;
+  GEMINI_GCP_PROJECT_ID: boolean;
 }
 
 async function getJson<T>(path: string): Promise<T> {

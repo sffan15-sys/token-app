@@ -12,9 +12,9 @@
  * kept only for local dev/testing without a live server/DB running (e.g.
  * component work in isolation) — shaped exactly like storage/db.ts's
  * UsageRecord so it stayed a drop-in stand-in while the real pipeline was
- * being built. Deliberately mixes rich time-series platforms (Claude,
- * Codex, Vercel) with sparse manual-log platforms (Gemini, Cursor) per
- * SPECS.md's confirmed-vs-best-effort/manual breakdown.
+ * being built. Gemini and Cursor intentionally have no fabricated telemetry:
+ * Gemini is fed by its Cloud Monitoring collector, while Cursor is listed as
+ * unavailable because individual plans expose no usage API.
  */
 import type { Alert, PlatformMeta, UsageRecord } from "../types";
 
@@ -33,6 +33,7 @@ export const PLATFORMS: PlatformMeta[] = [
     id: "claude",
     label: "Claude",
     tier: "official",
+    dataMode: "window",
     color: "orange",
     monthlyCostUsd: 100, // Claude Max (illustrative — confirm actual tier)
     windows: [
@@ -44,6 +45,7 @@ export const PLATFORMS: PlatformMeta[] = [
     id: "codex",
     label: "ChatGPT / Codex",
     tier: "official",
+    dataMode: "window",
     color: "aqua",
     monthlyCostUsd: 200, // ChatGPT Pro (illustrative — confirm actual tier)
     windows: [
@@ -54,15 +56,18 @@ export const PLATFORMS: PlatformMeta[] = [
   {
     id: "gemini",
     label: "Gemini",
-    tier: "manual",
+    tier: "official",
+    dataMode: "quota",
     color: "blue",
     monthlyCostUsd: 20, // Gemini Advanced / Google One AI Premium (illustrative)
-    windows: [{ key: "session", label: "Session", durationMs: 5 * HOUR }],
+    windows: [],
+    connectionNote: "API quota data via Google Cloud Monitoring",
   },
   {
     id: "vercel",
     label: "Vercel",
     tier: "official",
+    dataMode: "pool",
     color: "violet",
     monthlyCostUsd: 20, // Vercel Pro base seat (illustrative — metered usage on top, see billing_period_cost)
     windows: [{ key: "billing_period", label: "Billing period", durationMs: 30 * DAY }],
@@ -70,10 +75,12 @@ export const PLATFORMS: PlatformMeta[] = [
   {
     id: "cursor",
     label: "Cursor",
-    tier: "manual",
+    tier: "unavailable",
+    dataMode: "unavailable",
     color: "aqua",
     monthlyCostUsd: 60, // Cursor Pro+ (illustrative — confirm actual tier)
-    windows: [{ key: "billing_period", label: "Billing period", durationMs: 30 * DAY }],
+    windows: [],
+    connectionNote: "Not connected — no API available on individual plans",
   },
 ];
 
@@ -170,27 +177,6 @@ const records: UsageRecord[] = [];
   );
 }
 
-// --- Gemini: manual, sparse. Only 3 entries over 2 weeks. ---
-{
-  const entries = [
-    { t: now - 12 * DAY, v: 20 },
-    { t: now - 6 * DAY, v: 55 },
-    { t: now - 1.2 * DAY, v: 38 },
-  ];
-  for (const e of entries) {
-    records.push({
-      platform: "gemini",
-      window_start: iso(e.t - 2.5 * HOUR),
-      window_end: iso(e.t + 2.5 * HOUR),
-      metric: "session_used_percentage",
-      value: e.v,
-      unit: "percent",
-      fetched_at: iso(e.t),
-      raw: JSON.stringify({ source: "manual" }),
-    });
-  }
-}
-
 // --- Vercel: official, billing period, usage in $ vs plan + request count metric ---
 {
   const periodStart = now - 18 * DAY;
@@ -221,36 +207,6 @@ const records: UsageRecord[] = [];
   });
 }
 
-// --- Cursor: manual, sparse, $ pool ---
-{
-  const entries = [
-    { t: now - 9 * DAY, v: 6.4 },
-    { t: now - 3 * DAY, v: 11.1 },
-    { t: now - 0.5 * DAY, v: 14.8 },
-  ];
-  for (const e of entries) {
-    records.push({
-      platform: "cursor",
-      window_start: iso(now - 20 * DAY),
-      window_end: iso(now + 10 * DAY),
-      metric: "billing_period_cost",
-      value: e.v,
-      unit: "usd",
-      fetched_at: iso(e.t),
-      raw: JSON.stringify({ source: "manual" }),
-    });
-  }
-  records.push({
-    platform: "cursor",
-    window_start: iso(now - 20 * DAY),
-    window_end: iso(now + 10 * DAY),
-    metric: "billing_period_included_usd",
-    value: 20,
-    unit: "usd",
-    fetched_at: iso(now),
-  });
-}
-
 export const MOCK_USAGE_RECORDS: UsageRecord[] = records;
 
 export const MOCK_ALERTS: Alert[] = [
@@ -263,25 +219,6 @@ export const MOCK_ALERTS: Alert[] = [
     created_at: iso(now - 12 * 60 * 1000),
     active: true,
     businessTag: "Acme Consulting",
-  },
-  {
-    id: "a2",
-    platform: "cursor",
-    severity: "info",
-    kind: "use_it_or_lose_it",
-    message: "Cursor: $5.20 of included usage left with 10 days until reset — light usage this cycle.",
-    created_at: iso(now - 2 * HOUR),
-    active: true,
-  },
-  {
-    id: "a3",
-    platform: "gemini",
-    severity: "serious",
-    kind: "collector_stale",
-    message: "Gemini has no logged reading in over 24h — manual log may be overdue, not a real outage.",
-    created_at: iso(now - 5 * HOUR),
-    active: true,
-    businessTag: "Northwind Studio",
   },
   {
     id: "a4",

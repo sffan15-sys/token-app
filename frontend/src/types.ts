@@ -44,7 +44,9 @@ export interface Alert {
   businessTag?: string | null;
 }
 
-export type PlatformTier = "official" | "manual";
+export type PlatformTier = "official" | "manual" | "unavailable";
+
+export type PlatformDataMode = "window" | "pool" | "quota" | "unavailable";
 
 export interface WindowMeta {
   /** Metric prefix, e.g. "five_hour", "seven_day", "monthly". */
@@ -58,8 +60,11 @@ export interface PlatformMeta {
   id: string;
   label: string;
   tier: PlatformTier;
+  dataMode: PlatformDataMode;
   color: "blue" | "orange" | "aqua" | "violet";
   windows: WindowMeta[];
+  /** Plain-language integration state for sources that need special context. */
+  connectionNote?: string;
   /** Flat monthly subscription price in USD, if the plan is a flat-fee subscription
    * (vs. pure pay-per-token). Illustrative mock values — see mockData.ts comment. */
   monthlyCostUsd?: number;

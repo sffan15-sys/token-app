@@ -45,7 +45,7 @@ export function Home() {
         {usageRecords.length === 0 && (
           <div className="rounded-lg border p-3 text-xs" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
             No data yet — run a collector (<code>npm run collect:vercel</code>, etc, or start{" "}
-            <code>npm run server</code> to run them on a schedule) or log a manual reading in Settings.
+            <code>npm run server</code> to run them on a schedule).
           </div>
         )}
         <IdleHeadroomPanel records={usageRecords} />

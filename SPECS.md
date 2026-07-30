@@ -96,32 +96,38 @@ Each entry: **Source** (what we read) · **Auth** (what credential it needs)
 
 ## 3. Gemini (Google)
 
-### 3a. Gemini Advanced (consumer, via Google One AI Premium) — unresolved, likely dashboard-only
+### 3a. Gemini Advanced (consumer, via Google One AI Premium) — intentionally not integrated
 
-- No local CLI-equivalent to Claude Code/Codex CLI was found exposing a
-  consumer quota field. Google's own usage surface for this tier appears to
-  be the account billing/subscription page only.
-- **Fallback:** manual one-tap logging, same as the generic fallback in
-  CLAUDE.md, until/unless a local source is found. Worth a follow-up check
-  if the Gemini CLI (if the owner starts using it) exposes anything similar
-  to Claude Code's statusline JSON — didn't confirm either way yet.
+- No official API or confirmed local source exposes the consumer
+  subscription's remaining allowance.
+- Per the owner's explicit "API or nothing" direction, Gemini has **no
+  manual-log fallback**. Consumer-session usage remains absent unless Google
+  publishes a viable API/local data source.
 
-### 3b. Gemini API (AI Studio key or Vertex, pay-per-token / quota-based) — official, two paths
+### 3b. Gemini API (AI Studio key or Vertex, quota-based) — official collector built
 
-- **Path 1 — AI Studio dashboard quota view:** RPM/TPM/RPD per model are
-  visible in the AI Studio project dashboard. No confirmed public REST
-  endpoint for this specific view yet — needs a direct check against
-  `ai.google.dev` docs before assuming dashboard-only.
-- **Path 2 — Google Cloud quota/monitoring APIs:** since AI Studio/Vertex
-  keys are tied to a GCP project, actual consumption should be queryable
-  through Cloud Monitoring metrics (`serviceruntime.googleapis.com/quota/...`)
-  or the Service Usage API, using a service account with Monitoring Viewer
-  role on that project. This is the official, non-scraping path and should
-  be tried first — **not yet verified working for this specific quota type,
-  flag as needs-spike** before relying on it.
-- **Auth:** GCP service account (Monitoring Viewer) for path 2, or plain
-  API key for basic call-level rate limit headers if Gemini API returns
-  them (needs confirming — not yet verified in this research pass).
+- **Source:** Cloud Monitoring API v3 `projects.timeSeries.list`, reading the
+  documented `serviceruntime.googleapis.com/quota/*` metric family for the
+  `consumer_quota` resource.
+- **Service filters:** `generativelanguage.googleapis.com` for direct
+  Gemini/AI Studio traffic and `aiplatform.googleapis.com` for Vertex-routed
+  Gemini traffic.
+- **Auth:** `GOOGLE_APPLICATION_CREDENTIALS` points to a service-account JSON
+  key with `roles/monitoring.viewer`; `GEMINI_GCP_PROJECT_ID` identifies the
+  GCP project tied to the Gemini API key.
+- **Fields:** quota usage, limits, and exceeded values, retaining quota
+  dimension labels in normalized `UsageRecord.metric` names. Cloud Monitoring
+  `INT64`, `DOUBLE`, and `BOOL` values normalize to the shared numeric schema.
+- **Implementation:** `collectors/gemini/collect.ts`; runnable with
+  `npm run collect:gemini` and included in the local scheduler.
+- **Verification state:** endpoint/filter/auth/response shapes are verified
+  against Google's current official documentation. No live GCP credential is
+  available in this environment, so the OAuth exchange, Gemini-specific label
+  values, and real response bytes still require one live run.
+- **Failure behavior:** missing credentials/project ID and malformed
+  responses write `collector_errors` and return no/partial data instead of
+  crashing. The UI shows real quota rows, "No data yet", or collector errors;
+  it never substitutes a manual reading.
 
 ---
 
@@ -141,18 +147,21 @@ Each entry: **Source** (what we read) · **Auth** (what credential it needs)
 
 ---
 
-## 5. Cursor
+## 5. Cursor — intentionally not integrated for an individual plan
 
-- No official API or local-file source for usage/limit data was found in
-  this research pass. Usage is metered as a dollar pool
-  ($-denominated "included usage," resets on billing date, not calendar
-  month), visible only in the Cursor dashboard (cursor.com).
-- **Fallback for now:** manual one-tap logging, same pattern as Gemini
-  consumer tier. Flag as needs-follow-up-research — worth checking whether
-  Cursor's CLI mode (if the owner uses it) or a settings-sync file under
-  `~/.cursor` exposes anything analogous to Claude Code's statusline JSON,
-  since Cursor is itself a Claude Code-adjacent tool and may have converged
-  on similar patterns. Not confirmed either way yet.
+- Cursor now documents an Admin API with team-scoped endpoints such as
+  `/teams/daily-usage-data`, `/teams/filtered-usage-events`, and
+  `/teams/spend`.
+- That API is gated to Team/Business/Enterprise plans. An individual
+  Cursor Pro/Pro+ subscriber cannot mint the required Admin API key, and no
+  confirmed CLI/local-file source exposes the included-usage pool.
+- Per the owner's explicit "API or nothing" direction, Cursor has **no
+  manual-log fallback and no fake telemetry**. It remains listed as a known
+  platform, but the UI reads: **"Not connected — no API available on
+  individual plans."**
+- If the account later gains team-tier Admin API access, build a real
+  collector against the documented endpoints and change the availability
+  state; until then there is deliberately no data path.
 
 ---
 
@@ -164,10 +173,10 @@ Each entry: **Source** (what we read) · **Auth** (what credential it needs)
 | Claude (API) | Admin API usage_report | official | High |
 | OpenAI/Codex (consumer) | Codex CLI's internal `/api/codex/usage` via stored token | best-effort | Medium — confirmed used by a community tool, not us yet |
 | OpenAI (API) | `/v1/usage` + rate-limit headers | official | High |
-| Gemini (consumer) | none found | manual fallback | Low — needs more research |
-| Gemini (API) | Cloud Monitoring quota metrics (hypothesis) | official (unverified) | Needs spike |
+| Gemini (consumer) | none available | intentionally not integrated; no manual fallback | Confirmed unavailable via current research |
+| Gemini (API) | Cloud Monitoring `serviceruntime.googleapis.com/quota/*` via `timeSeries.list` | official collector built | Docs-verified; live credential run pending |
 | Vercel | `/billing/charges` + `/v2` usage | official | High (pending plan-tier check) |
-| Cursor | none found | manual fallback | Low — needs more research |
+| Cursor (individual Pro/Pro+) | none viable; Admin API is team-plan gated | intentionally unavailable; no manual/fake data | High |
 
 ## Build order implied by confidence
 
@@ -179,6 +188,7 @@ Each entry: **Source** (what we read) · **Auth** (what credential it needs)
    names above).
 4. OpenAI API usage (official, trivial, low priority since it's the least
    asked-about pool).
-5. Gemini and Cursor: ship manual logging now, spike the Cloud Monitoring
-   path for Gemini and the Cursor CLI/local-file question in parallel with
-   early usage of 1–3.
+5. Gemini API: Cloud Monitoring collector built; run once with a real
+   Monitoring Viewer service account to confirm live labels/response bytes.
+6. Cursor: no build on an individual plan. Revisit only if team-tier Admin
+   API access becomes available.

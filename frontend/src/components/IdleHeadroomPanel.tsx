@@ -9,7 +9,9 @@ import type { PlatformMeta, UsageRecord } from "../types";
  * interchangeable AI task pool, so routing a "next AI task" there makes no
  * sense. Bug flagged in research/codex-critique.md #4.
  */
-const AI_TASK_PLATFORM_IDS = new Set(["claude", "codex", "gemini", "cursor"]);
+// Gemini's collector reports metered API quota rather than consumer
+// subscription headroom, and Cursor is unavailable on individual plans.
+const AI_TASK_PLATFORM_IDS = new Set(["claude", "codex"]);
 
 const HEADROOM_THRESHOLD = 40; // usedPercent below this = "healthy headroom" baseline
 /** Below this much time left in the window, don't call it "safe" no matter how low used% is. */
