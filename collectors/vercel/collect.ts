@@ -30,7 +30,7 @@
  * invoiced amount supplied by Vercel's billing API.
  */
 
-import { insertCollectorError, insertUsageRecords, type UsageRecord } from "../../storage/db.js";
+import { insertCollectorError, insertUsageRecords, type UsageRecord } from "../ingest.js";
 import { applyConfigToEnv } from "../../server/config.js";
 
 const VERCEL_API_BASE = "https://api.vercel.com";
@@ -152,7 +152,7 @@ export async function collectVercelUsage(opts: CollectVercelOptions = {}): Promi
     const message =
       "VERCEL_TOKEN env var is not set. This collector needs a personal access " +
       "token (Settings > Tokens on vercel.com) with access to the target team.";
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "missing_token",
@@ -182,7 +182,7 @@ export async function collectVercelUsage(opts: CollectVercelOptions = {}): Promi
     });
   } catch (err) {
     const message = `Network error calling Vercel billing/charges: ${(err as Error).message}`;
-    insertCollectorError({ platform: PLATFORM, occurred_at: fetchedAt, kind: "network_error", message });
+    await insertCollectorError({ platform: PLATFORM, occurred_at: fetchedAt, kind: "network_error", message });
     throw new Error(message);
   }
 
@@ -191,7 +191,7 @@ export async function collectVercelUsage(opts: CollectVercelOptions = {}): Promi
   const rlRemaining = response.headers.get("x-ratelimit-remaining");
   const rlLimit = response.headers.get("x-ratelimit-limit");
   if (rlRemaining && rlLimit && Number(rlRemaining) < Number(rlLimit) * 0.1) {
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "rate_limit_warning",
@@ -202,7 +202,7 @@ export async function collectVercelUsage(opts: CollectVercelOptions = {}): Promi
   if (response.status === 403) {
     const body = await response.text().catch(() => "");
     const err = new VercelPlanMismatchError(response.status, body);
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "plan_mismatch_403",
@@ -215,7 +215,7 @@ export async function collectVercelUsage(opts: CollectVercelOptions = {}): Promi
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     const message = `Vercel billing/charges returned HTTP ${response.status}: ${body}`;
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: `http_${response.status}`,
@@ -246,7 +246,7 @@ export async function collectVercelUsage(opts: CollectVercelOptions = {}): Promi
   }
 
   if (malformedLines > 0) {
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "malformed_jsonl_lines",
@@ -304,7 +304,7 @@ export async function collectVercelUsage(opts: CollectVercelOptions = {}): Promi
       }),
     });
   } else {
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "mixed_billing_currencies",
@@ -315,7 +315,7 @@ export async function collectVercelUsage(opts: CollectVercelOptions = {}): Promi
     });
   }
 
-  const recordsWritten = insertUsageRecords(allRecords);
+  const recordsWritten = await insertUsageRecords(allRecords);
   return { recordsWritten, chargesSeen };
 }
 

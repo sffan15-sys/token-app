@@ -32,7 +32,7 @@
  * usage bucket JSON shape below still match what comes back.
  */
 
-import { insertCollectorError, insertUsageRecords, type UsageRecord } from "../../storage/db.js";
+import { insertCollectorError, insertUsageRecords, type UsageRecord } from "../ingest.js";
 import { applyConfigToEnv } from "../../server/config.js";
 
 const PLATFORM = "openai";
@@ -66,11 +66,11 @@ function isoFromEpochSeconds(s: number): string {
   return new Date(s * 1000).toISOString();
 }
 
-function requireApiKey(fetchedAt: string): string {
+async function requireApiKey(fetchedAt: string): Promise<string> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
     const message = "OPENAI_API_KEY env var is not set.";
-    insertCollectorError({ platform: PLATFORM, occurred_at: fetchedAt, kind: "missing_token", message });
+    await insertCollectorError({ platform: PLATFORM, occurred_at: fetchedAt, kind: "missing_token", message });
     throw new Error(message);
   }
   return key;
@@ -84,7 +84,7 @@ async function collectRateLimitHeaders(apiKey: string, fetchedAt: string): Promi
       headers: { Authorization: `Bearer ${apiKey}` },
     });
   } catch (err) {
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "network_error",
@@ -95,7 +95,7 @@ async function collectRateLimitHeaders(apiKey: string, fetchedAt: string): Promi
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: `http_${response.status}`,
@@ -139,7 +139,7 @@ async function collectRateLimitHeaders(apiKey: string, fetchedAt: string): Promi
   }
 
   if (!anyFound) {
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "missing_field",
@@ -171,7 +171,7 @@ async function collectOrganizationUsage(
   try {
     response = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
   } catch (err) {
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "network_error",
@@ -183,7 +183,7 @@ async function collectOrganizationUsage(
   if (response.status === 401 || response.status === 403) {
     // Expected when OPENAI_API_KEY is a plain project key, not an Admin key.
     const body = await response.text().catch(() => "");
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "admin_key_required",
@@ -198,7 +198,7 @@ async function collectOrganizationUsage(
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: `http_${response.status}`,
@@ -212,7 +212,7 @@ async function collectOrganizationUsage(
   try {
     data = (await response.json()) as UsagePageResponse;
   } catch {
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "invalid_json",
@@ -222,7 +222,7 @@ async function collectOrganizationUsage(
   }
 
   if (!Array.isArray(data.data)) {
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "missing_field",
@@ -283,14 +283,14 @@ async function collectOrganizationUsage(
 
 export async function collectOpenAiUsage(): Promise<{ recordsWritten: number }> {
   const fetchedAt = new Date().toISOString();
-  const apiKey = requireApiKey(fetchedAt);
+  const apiKey = await requireApiKey(fetchedAt);
 
   const [headerRecords, usageRecords] = await Promise.all([
     collectRateLimitHeaders(apiKey, fetchedAt),
     collectOrganizationUsage(apiKey, fetchedAt),
   ]);
 
-  const recordsWritten = insertUsageRecords([...headerRecords, ...usageRecords]);
+  const recordsWritten = await insertUsageRecords([...headerRecords, ...usageRecords]);
   return { recordsWritten };
 }
 

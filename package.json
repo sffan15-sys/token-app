@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "vercel-build": "npm run build && npm ci --prefix frontend && npm run build --prefix frontend -- --outDir ../public --emptyOutDir",
     "collect:vercel": "tsx collectors/vercel/collect.ts",
     "collect:codex": "tsx collectors/codex/collect.ts",
     "collect:openai": "tsx collectors/openai/collect.ts",
@@ -19,6 +20,7 @@
     "node": ">=22.5.0"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "cors": "^2.8.5",
     "express": "^4.21.2"
   },

@@ -13,6 +13,6 @@
     "declaration": false,
     "sourceMap": false
   },
-  "include": ["collectors/**/*.ts", "storage/**/*.ts", "server/**/*.ts"],
+  "include": ["app.ts", "collectors/**/*.ts", "storage/**/*.ts", "server/**/*.ts", "types/**/*.d.ts"],
   "exclude": ["node_modules", "dist", "data"]
 }

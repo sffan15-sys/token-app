@@ -11,4 +11,9 @@ export default defineConfig({
     // access to this single-user local tool. Dev-server-only setting.
     allowedHosts: true,
   },
+  preview: {
+    // Same as above but for `vite preview` (serves the production build) -
+    // this is a separate config key from server.allowedHosts.
+    allowedHosts: true,
+  },
 })

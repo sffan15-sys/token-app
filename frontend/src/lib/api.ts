@@ -1,10 +1,10 @@
 /**
- * Fetch-based data layer for the local API server (see server/app.ts).
+ * Fetch-based data layer for the hosted API and local companion.
  * Plain fetch + useState/useEffect hooks — no React Query, to keep deps
  * minimal for a single-user local tool with a handful of endpoints.
  *
- * Base URL: VITE_API_BASE env var if set, otherwise http://localhost:8787
- * (the default port server/index.ts listens on).
+ * Production uses same-origin /api routes. Local Vite development defaults
+ * to the local companion on port 8787 unless VITE_API_BASE is set.
  */
 import { useEffect, useState } from "react";
 import type {
@@ -14,8 +14,13 @@ import type {
 } from "../types";
 import { MOCK_USAGE_RECORDS } from "../data/mockData";
 
-const ENV = (import.meta as unknown as { env?: Record<string, string> }).env ?? {};
-const API_BASE = ENV.VITE_API_BASE || "http://localhost:8787";
+const ENV =
+  (import.meta as unknown as {
+    env?: Record<string, string | boolean>;
+  }).env ?? {};
+const API_BASE =
+  (typeof ENV.VITE_API_BASE === "string" && ENV.VITE_API_BASE) ||
+  (ENV.DEV ? "http://localhost:8787" : "");
 /**
  * Set by vite.config.demo.ts for the single-file shareable demo build, which
  * has no backend behind it (it's a static file on GitHub Pages / a claude.ai
@@ -34,6 +39,8 @@ export interface CollectorErrorRow {
 }
 
 export interface ConfigStatus {
+  TOKEN_APP_API_URL: boolean;
+  TOKEN_APP_API_SECRET: boolean;
   VERCEL_TOKEN: boolean;
   VERCEL_TEAM_ID: boolean;
   OPENAI_API_KEY: boolean;
@@ -52,6 +59,7 @@ export type PlanConfigKey =
 export type ConfigKey = keyof ConfigStatus | PlanConfigKey;
 
 export interface ConfigResponse {
+  mode: "local" | "hosted";
   status: ConfigStatus;
   plans: PlanSelections;
 }
@@ -106,6 +114,8 @@ export function fetchErrors(): Promise<CollectorErrorRow[]> {
 }
 
 const DEMO_CONFIG_STATUS: ConfigStatus = {
+  TOKEN_APP_API_URL: false,
+  TOKEN_APP_API_SECRET: false,
   VERCEL_TOKEN: false,
   VERCEL_TEAM_ID: false,
   OPENAI_API_KEY: false,
@@ -114,6 +124,7 @@ const DEMO_CONFIG_STATUS: ConfigStatus = {
   GEMINI_GCP_PROJECT_ID: false,
 };
 const DEMO_CONFIG: ConfigResponse = {
+  mode: "hosted",
   status: DEMO_CONFIG_STATUS,
   plans: {},
 };

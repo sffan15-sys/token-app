@@ -169,6 +169,12 @@ training knowledge). Rough shape anticipated:
 - Deployable to Vercel (owner already has an account there, and it's the
   one platform with a clean official usage API to dogfood against first).
 
+Current migration topology (2026-07-30): the Vite dashboard and Express API are
+Vercel-targeted, backed by Neon Postgres through Vercel Marketplace (the
+original Vercel Postgres product was retired). Collectors and the `setInterval`
+scheduler remain local because they read local CLI credentials/state, and push
+only normalized records/errors to the protected hosted ingest endpoint.
+
 ## Next actions
 
 1. Verify current (2026) API/scraping reality for each platform against
@@ -178,9 +184,10 @@ training knowledge). Rough shape anticipated:
    re-confirmed live against vercel.com/docs on 2026-07-30.
 2. Stand up the Vercel integration first (least friction, official API,
    proves the pipeline end-to-end). **Built** —
-   `collectors/vercel/collect.ts` + shared SQLite storage layer
-   (`storage/db.ts`). Not yet run against a real `VERCEL_TOKEN`/live team;
-   see README.md "What's NOT yet verified".
+   `collectors/vercel/collect.ts` + the protected hosted ingest path and Neon
+   Postgres storage layer (`collectors/ingest.ts`, `storage/db.ts`). The
+   billing collector itself still needs an eligible live
+   `VERCEL_TOKEN`/team.
 2a. Also built the Claude Code statusline collector
    (`collectors/claude/statusline.ts`) ahead of schedule since it's the
    other high-confidence source. Not yet wired into
@@ -193,8 +200,11 @@ training knowledge). Rough shape anticipated:
 4. Build the baseline/anomaly + alert logic against whatever real data
    exists, iterate from there. **Not started** — blocked on getting at
    least one collector verified against live data.
+5. From an environment that can access the owner's existing Vercel CLI auth,
+   provision/connect the free Neon Marketplace database, set
+   `TOKEN_APP_WRITE_SECRET`, run `npx vercel --prod`, and complete the Codex
+   local-to-hosted round trip in README.md. **Pending actual account-side
+   provisioning/deployment.**
 
-See README.md in the project root for full detail on what's built, what's
-unverified, and the one deviation from spec (storage driver: `node:sqlite`
-instead of `better-sqlite3`, due to no Python/node-gyp toolchain on this
-machine — same schema, see README for rationale).
+See README.md in the project root for the current hosted/local split,
+deployment commands, secret configuration, and verification procedure.

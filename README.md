@@ -1,300 +1,343 @@
 # token-app
 
-Personal usage/rate-limit tracker across AI platforms and Vercel. See
-`CLAUDE.md` for project context/authorization and `SPECS.md` for the
-per-platform data source research.
+Personal dashboard for AI-platform and Vercel usage. The dashboard and its
+database are designed to run on Vercel; collectors that depend on local CLI
+state keep running on the owner's computer and push normalized readings to the
+hosted API.
 
-## What's built (2026-07-30)
+See `CLAUDE.md` for project context and standing authorization, and `SPECS.md`
+for the source/stability notes for each platform.
 
-- **Project scaffold**: `package.json`, `tsconfig.json` (TypeScript, ESM,
-  Node NodeNext resolution), `collectors/`, `storage/`.
-- **Shared storage layer** (`storage/db.ts`): a local SQLite file at
-  `data/token-app.db` (gitignored) with two tables:
-  - `usage_records`: the common normalized schema
-    `{platform, window_start, window_end, metric, value, unit, fetched_at, plan_type?, raw}`
-    that every collector writes into.
-  - `collector_errors`: defensive log of validation failures / hard errors
-    (missing token, unexpected payload shape, HTTP errors) so problems are
-    visible instead of silently dropped.
-  - Uses Node's built-in `node:sqlite` (`DatabaseSync`), **not**
-    `better-sqlite3` — see "Deviations" below.
-- **Vercel collector** (`collectors/vercel/collect.ts`): calls
-  `GET /v1/billing/charges` (FOCUS v1.3 JSONL), parses each charge line,
-  and writes `cost.<service>.billed`, `cost.<service>.effective`, and
-  (when present) `usage.<service>` records. It also sums the real net
-  `BilledCost` values for the current month into `billing_period_cost`;
-  this includes whatever base seats, usage, credits, adjustments, and taxes
-  Vercel actually returns, with no guessed flat plan fee. Reads the token from
-  `VERCEL_TOKEN` (never hardcoded). Handles:
-  - missing token -> clear error, no crash
-  - HTTP 403 (Hobby-plan / insufficient-role case flagged in SPECS.md) ->
-    a distinct `VercelPlanMismatchError` with an explanatory message,
-    logged to `collector_errors` with kind `plan_mismatch_403`
-  - other non-2xx responses, network errors, and malformed JSONL lines ->
-    all logged, none crash the process
-  - low remaining rate-limit budget (`x-ratelimit-remaining` header) ->
-    logged as a warning
-  - Run via `npm run collect:vercel` (needs `VERCEL_TOKEN` env var, and
-    optionally `VERCEL_TEAM_ID`).
-- **Gemini API collector** (`collectors/gemini/collect.ts`): exchanges a
-  service-account JWT for a Monitoring-read access token, then paginates
-  Cloud Monitoring `projects.timeSeries.list` for the documented
-  `serviceruntime.googleapis.com/quota/*` metric family. It reads both
-  `generativelanguage.googleapis.com` (direct Gemini/AI Studio) and
-  `aiplatform.googleapis.com` (Vertex AI) `consumer_quota` resources,
-  normalizes numeric and boolean points into `usage_records`, and logs
-  missing credentials/project IDs or malformed responses to
-  `collector_errors` without crashing. Run via `npm run collect:gemini`;
-  needs `GOOGLE_APPLICATION_CREDENTIALS` and `GEMINI_GCP_PROJECT_ID`.
-- **Claude Code statusline collector** (`collectors/claude/statusline.ts`):
-  reads the JSON payload Claude Code passes on stdin to the `statusLine`
-  hook, defensively validates `rate_limits.five_hour` /
-  `rate_limits.seven_day` (`used_percentage`, `resets_at`), writes
-  normalized records, and prints a short status-line string to stdout so
-  the actual Claude Code UI keeps working. If the payload is invalid JSON,
-  missing `rate_limits`, or has out-of-range/wrong-typed fields, it writes
-  a `collector_errors` row (kinds: `invalid_json`, `missing_field`,
-  `invalid_shape`) instead of crashing or dropping the read, and still
-  prints a visible placeholder on the status line rather than going blank.
+## Architecture
 
-The Claude and Vercel defensive paths were exercised directly (piping
-sample JSON to the statusline script; running Vercel with no token) and confirm
-error rows land in `collector_errors` and valid data lands in
-`usage_records` as expected — see verification commands below.
-
-## What's NOT yet verified (needs real credentials/sessions)
-
-- **Vercel**: written entirely against the documented FOCUS v1.3 JSONL
-  schema (verified live against Vercel's docs on 2026-07-30, endpoint
-  `GET /v1/billing/charges`), but never run against a real
-  `VERCEL_TOKEN` or a real Pro/Enterprise team. Field values, exact 403
-  body shape, and whether a Hobby-plan team actually 403s (vs. some other
-  status) are unconfirmed. Set `VERCEL_TOKEN` (and optionally
-  `VERCEL_TEAM_ID`) and run `npm run collect:vercel` to verify.
-- **Gemini API**: the Cloud Monitoring endpoint, per-request exact metric
-  filters, `consumer_quota` service filter, service-account OAuth flow, and
-  TimeSeries/TypedValue shapes are verified against current official Google
-  documentation. No GCP service-account credential is available on this
-  machine, so the OAuth exchange, real Gemini quota label values, and live
-  response bytes still need one run with a Monitoring Viewer account.
-- **Claude statusline**: the parsing/validation logic was tested with
-  hand-written sample payloads only (see commands below), not a real
-  payload from a live Claude Code session. The hook is not yet wired into
-  Claude Code settings (`statusLine` config) — that's a one-line addition
-  to `~/.claude/settings.json` once the real payload shape is confirmed:
-
-  ```json
-  {
-    "statusLine": {
-      "type": "command",
-      "command": "npx tsx C:/Users/Fourtys/Documents/Claude/Projects/token-app/collectors/claude/statusline.ts"
-    }
-  }
-  ```
-
-  Recommend running it once with a temporary logging wrapper (or just
-  inspecting `data/token-app.db` after a live session) to confirm the real
-  field names/types match what SPECS.md documents before trusting it long
-  term, since SPECS.md explicitly flags this as an undocumented shape that
-  could change.
-
-## Deviations from SPECS.md / plan
-
-- **Storage engine**: the task suggested SQLite via `better-sqlite3` or
-  JSONL. `better-sqlite3` requires a native build (node-gyp + Python), and
-  this machine has no usable Python interpreter for node-gyp, so
-  `npm install` failed. Switched to Node's built-in `node:sqlite`
-  (`DatabaseSync`, stable since Node 22.5, no native compilation needed).
-  Same on-disk SQLite database and same schema — this is purely a driver
-  swap, not a design change. `node:sqlite` is still marked experimental
-  upstream; if that ever becomes a problem, swapping back to
-  `better-sqlite3` (once Python/build tools are available) is a small,
-  contained change limited to `storage/db.ts`.
-- Everything else follows SPECS.md as documented (endpoint, auth, field
-  names, error-handling requirements).
-
-## Verification commands used
-
-```sh
-npm install
-npx tsc --noEmit -p tsconfig.json
-
-# Claude collector, valid payload
-echo '{"rate_limits":{"five_hour":{"used_percentage":42,"resets_at":1785000000},"seven_day":{"used_percentage":10,"resets_at":1785500000}}}' | npx tsx collectors/claude/statusline.ts
-
-# Claude collector, malformed payload (defensive path)
-echo '{"foo":"bar"}' | npx tsx collectors/claude/statusline.ts
-
-# Vercel collector, no token set (defensive path)
-npx tsx collectors/vercel/collect.ts
+```text
+Claude Code statusLine ─┐
+Codex CLI collector ────┤
+Vercel/OpenAI/Gemini ───┼─ local HTTPS ingest + shared secret
+collectors              │
+local setInterval runner┘
+                              │
+                              ▼
+Vercel Express Function ── Neon Postgres
+          ▲                    (usage_records,
+          │                     collector_errors)
+          │
+Vercel CDN-hosted React dashboard
 ```
 
-## Backend API server + scheduler + frontend wiring (2026-07-30)
+Production target on Vercel:
 
-Added the piece that was missing before: a real backend and a frontend that
-actually reads from it, instead of `frontend/src/data/mockData.ts`.
+- The Vite/React frontend, built into `public/` for Vercel's CDN.
+- The Express app exported by root `app.ts`, which Vercel runs as one Fluid
+  compute function. It never calls `listen()` and never starts a scheduler.
+- The two-table Postgres store: `usage_records` and `collector_errors`.
+- Read APIs and secret-protected write/ingest APIs.
 
-- **`server/app.ts`** — a small Express API, no auth (single-user local
-  tool). Endpoints:
-  - `GET /api/usage` — latest reading per `(platform, metric)`.
-  - `GET /api/usage/:platform` — full history for one platform
-    (`?limit=` caps rows, default 2000).
-  - `GET /api/errors` — recent `collector_errors` rows.
-  - `POST /api/manual-log` — `{ platform, value, businessTag? }` (matches
-    the generic storage schema); also accepts optional
-    `metric`/`unit`/`window_start`/`window_end` overrides. The endpoint is
-    retained for other legitimate/manual sources, but Gemini and Cursor have
-    no manual-log UI or fallback.
-  - `GET /api/config` / `POST /api/config` — read/write which API
-    keys are set (GET returns booleans only, never values).
-- **`server/config.ts`** — local plaintext key storage at
-  `data/local-config.json` (under the already-gitignored `/data/`
-  directory — double-checked it never gets committed). `applyConfigToEnv()`
-  copies saved keys into `process.env` so direct `npm run collect:*`,
-  `npm run server`, and scheduled collector runs pick them up without the
-  owner exporting env vars by hand. Values are never logged or printed anywhere
-  (checked all collectors for accidental token logging — none found;
-  they only log a masked/absent-token message).
-- **`server/scheduler.ts`** — `setInterval`-based runner: Vercel + OpenAI +
-  Gemini every 30 min, Codex every 15 min. Claude is deliberately **not** in this
-  loop — it's a `statusLine` hook Claude Code itself invokes on every turn
-  (push, not poll), so polling it makes no sense; see the statusline
-  section above for its own wiring. Every job is wrapped in try/catch so a
-  collector failure (missing token, HTTP error, etc — all of which the
-  collectors already log to `collector_errors` themselves) can never crash
-  the server process; the scheduler also writes its own backstop
-  `collector_errors` row (kind `scheduler_uncaught`) for anything that
-  slips past a collector's own handling.
-- **`server/index.ts`** — combined process: starts the Express app and the
-  scheduler together (kept as one process deliberately — a second process
-  buys nothing for a single-user local tool). `NO_SCHEDULER=1` runs the API
-  only.
-- **Frontend** (`frontend/src/lib/api.ts`, `frontend/src/lib/alerts.ts`):
-  plain fetch + a small `useFetch` hook (no React Query — kept deps
-  minimal). `Home.tsx`, `PlatformDetail.tsx`, `Alerts.tsx`, `Settings.tsx`
-  now fetch real data and render a loading state, an explicit "couldn't
-  reach the API server" error state, and a "no data yet — run a collector"
-  empty state instead of crashing on an empty/fresh DB. `Alerts.tsx` no
-  longer uses hand-authored `MOCK_ALERTS`; `lib/alerts.ts` derives real
-  alerts (approaching-limit, stale-collector, and a passthrough per
-  `collector_errors` row) from live snapshots — there's still no
-  baseline/burn-rate anomaly engine (CLAUDE.md Step 3/4 says "not
-  started"), so burn-rate/idle-allowance/window-refreshed alert kinds
-  aren't produced yet.
-  `frontend/src/data/mockData.ts` is re-scoped: its
-  `PLATFORMS` export is real static UI metadata and is still used; only
-  `MOCK_USAGE_RECORDS`/`MOCK_ALERTS` are dev-only fakes, no longer rendered
-  by the running app. Gemini and Cursor have no fake records: Gemini renders
-  real quota rows or "No data yet", while Cursor reads "Not connected — no
-  API available on individual plans."
+Still local-only:
 
-### Automatic cost derivation
+- `server/index.ts`, which starts the local companion API and interval
+  scheduler.
+- `server/scheduler.ts`, which polls Vercel, Codex, OpenAI, and Gemini.
+- Claude's `collectors/claude/statusline.ts` hook, invoked by Claude Code after
+  turns rather than polled.
+- Local CLI credentials and `data/local-config.json`.
 
-`frontend/src/lib/costs.ts` removes all illustrative static prices from
-`PLATFORMS`. ChatGPT/Codex uses the real top-level `plan_type` captured by
-the live collector and maps only unambiguous fixed-price plans; the currently
-captured `plus` account resolves to $20/month. Vercel uses the real
-`billing_period_cost` aggregate.
+There is no production SQLite file and no hosted background loop. Postgres is
+the single source of truth read by the deployed dashboard.
 
-Claude and Gemini are explicitly "Cost unknown" because their collector
-payloads expose no subscription plan/billing tier, and Cursor is "Not
-connected." Unknown costs are listed and excluded from the displayed total,
-never silently counted as zero.
+### Why the database is called Neon
 
-### Running this end-to-end
+Vercel Postgres was retired for new projects and replaced by Postgres providers
+in the Vercel Marketplace. This project uses the Neon native integration, the
+direct replacement recommended by Vercel. Neon has a free plan, connects to
+Hobby projects, and injects `DATABASE_URL`. `storage/db.ts` also accepts
+`POSTGRES_URL` for compatibility.
+
+The app uses `@neondatabase/serverless` over HTTP, which is appropriate for
+short-lived Vercel invocations and avoids maintaining a TCP pool in each
+function instance.
+
+Current references checked for this migration:
+
+- [Postgres on Vercel](https://vercel.com/docs/postgres)
+- [Vercel Marketplace storage](https://vercel.com/docs/marketplace-storage)
+- [Vercel CLI integration commands](https://vercel.com/docs/cli/integration)
+- [Express on Vercel](https://vercel.com/docs/frameworks/backend/express)
+- [Neon on Vercel Marketplace](https://vercel.com/marketplace/neon)
+- [Neon serverless driver](https://www.npmjs.com/package/@neondatabase/serverless)
+
+## API
+
+| Method | Path | Access | Purpose |
+|---|---|---|---|
+| `GET` | `/api/usage` | Public | Latest row per `(platform, metric)` |
+| `GET` | `/api/usage/:platform` | Public | Time-ascending platform history |
+| `GET` | `/api/errors` | Public | Recent collector errors |
+| `GET` | `/api/health` | Public | Runtime health/mode |
+| `GET` | `/api/config` | Public | Local status locally; no hosted credentials are exposed |
+| `POST` | `/api/ingest` | Shared secret on Vercel | Collector batch ingest |
+| `POST` | `/api/manual-log` | Shared secret on Vercel | Generic manual reading |
+| `POST` | `/api/config` | Local-only; protected/rejected when hosted | Save local collector configuration |
+
+Hosted writes require:
+
+```http
+X-Token-App-Secret: <TOKEN_APP_WRITE_SECRET>
+```
+
+The local collector helper sends the value in `TOKEN_APP_API_SECRET`. These
+are two names for the same shared secret on opposite sides of the connection.
+Use a random value of at least 32 bytes. It is deliberately simple shared-key
+protection for a single-owner tool, not a multi-user authentication system.
+
+## First-time hosted setup
+
+Requirements:
+
+- Node.js 22.5 or newer
+- npm
+- Vercel CLI 47.0.5 or newer
+- An authenticated Vercel CLI session
+
+Install and verify both packages:
 
 ```sh
-# 1. one-time
 npm install
-cd frontend && npm install && cd ..
+npm --prefix frontend install
+npm run typecheck
+npm run build
+npm --prefix frontend run build
+```
 
-# 2. backend: API server + scheduler (same process), default port 8787
+Link or create the Vercel project:
+
+```sh
+npx vercel link
+```
+
+Provision the current Vercel Marketplace replacement for Vercel Postgres:
+
+```sh
+npx vercel integration add neon --name token-app-db
+```
+
+The command prompts for Neon's free plan and region, connects the resource to
+the linked project, injects `DATABASE_URL`, and pulls development environment
+variables unless told not to. Confirm with:
+
+```sh
+npx vercel integration list
+npx vercel env ls
+```
+
+Generate one random secret without committing it, then add the same value as
+`TOKEN_APP_WRITE_SECRET` to Vercel's Production environment (and Preview too
+if collectors will ever target preview deployments):
+
+```sh
+npx vercel env add TOKEN_APP_WRITE_SECRET production
+npx vercel env add TOKEN_APP_WRITE_SECRET preview
+```
+
+Deploy production:
+
+```sh
+npx vercel --prod
+```
+
+Vercel runs `npm run vercel-build`, which typechecks/builds the root project,
+installs the nested frontend package from its lockfile, and emits the frontend
+into root `public/`. Vercel detects root `app.ts` as the Express Function.
+
+The schema is created idempotently on the first database-backed request. No
+separate migration command is required for the initial two-table schema.
+
+## Configure and run local collectors
+
+The hosted dashboard is intentionally read-only for collector credentials: a
+webpage running on Vercel cannot write a file on the owner's computer.
+
+Run the local companion and local Vite UI:
+
+```sh
 npm run server
-# API only, no scheduler:
-npm run server:no-scheduler
-
-# 3. frontend dev server (separate terminal)
-cd frontend && npm run dev
-# open the printed localhost URL — Settings > Collector configuration is
-# where VERCEL_TOKEN / OPENAI_API_KEY and Gemini's credential path/project ID
-# get saved (POST /api/config). Codex reads its own CLI login
-# (~/.codex/auth.json) automatically, nothing to paste for it.
+npm --prefix frontend run dev
 ```
 
-If the frontend can't reach `http://localhost:8787` (different port, CORS,
-server not started), every page shows an explicit "couldn't reach the API
-server — start it with `npm run server`" message rather than a blank
-crash. Override the API base with `VITE_API_BASE` if the server isn't on
-the default port.
+Open the local Vite URL, then use Settings to save:
 
-**Credential-setup fallback** if the Settings UI path has issues: set
-`VERCEL_TOKEN` / `OPENAI_API_KEY` (and optionally `VERCEL_TEAM_ID`,
-`CODEX_HOME`) plus Gemini's `GOOGLE_APPLICATION_CREDENTIALS` /
-`GEMINI_GCP_PROJECT_ID` as real env vars before running `npm run collect:*` /
-`npm run server`, or hand-edit `data/local-config.json` directly (same
-shape `POST /api/config` writes — plain JSON, gitignored, never logged).
-This is not a manual usage-log fallback.
+- `TOKEN_APP_API_URL`: the production deployment base URL, for example
+  `https://token-app.example.vercel.app`
+- `TOKEN_APP_API_SECRET`: the exact value saved on Vercel as
+  `TOKEN_APP_WRITE_SECRET`
+- any platform credentials used by the pollable collectors
 
-### What's verified vs not (this pass)
+Settings writes these values to gitignored `data/local-config.json`. Existing
+secret values are represented as set/unset booleans and are never returned to
+the browser.
 
-Verified locally (no external credentials required):
-- `npm run typecheck` and `npm run build` pass for the root project
-  (collectors + storage + **server**).
-- `cd frontend && npm run build` passes.
-- API server starts against an empty DB; `GET /api/usage`,
-  `GET /api/errors` return sensible empty arrays; `POST /api/manual-log`
-  and `POST /api/config` round-trip correctly (curl-tested); saved config
-  values confirmed present in `data/local-config.json` and confirmed
-  *absent* from anything printed to the console.
-- Scheduler starts and isolates every interval job. With no
-  `VERCEL_TOKEN`/`OPENAI_API_KEY`/Gemini GCP configuration on this machine,
-  collectors correctly log missing-configuration errors to
-  `collector_errors` instead of crashing the process. The Codex job,
-  notably, **succeeded for real** against this
-  machine's already-logged-in Codex CLI session and wrote a live record —
-  the first real end-to-end proof this pipeline works end to end, not just
-  against synthetic data.
+Environment variables are an equivalent fallback:
 
-Not verified (no `VERCEL_TOKEN`/Admin `OPENAI_API_KEY`/GCP Monitoring
-service account available in this
-environment): Vercel collector against a real Pro/Enterprise team, OpenAI
-organization-usage endpoint against a real Admin key, Gemini Cloud
-Monitoring against a real project, and the frontend
-rendering real (not empty) usage data end-to-end in a browser — the API
-shapes were confirmed by curl and the `useFetch`/selector code is unchanged
-from what already worked against `MOCK_USAGE_RECORDS` (same `UsageRecord[]`
-shape in, same components), but an actual browser render was not screenshot
--verified in this pass.
-
-## Running a second, isolated instance (e.g. for a second user)
-
-This is a single-user tool per instance - there's no login/auth. For a
-second person (e.g. sharing this with someone else) to track their own
-platforms without touching your data, run a second, fully separate
-instance instead of adding multi-tenant accounts:
-
-```
-DATA_DIR=/path/to/wyatts-data PORT=8788 npm run server
+```sh
+TOKEN_APP_API_URL=https://token-app.example.vercel.app
+TOKEN_APP_API_SECRET=<same-shared-secret>
 ```
 
-`DATA_DIR` controls where both the SQLite DB (`storage/db.ts`) and the
-saved API keys (`server/config.ts`'s `local-config.json`) live - point it
-at a different directory and the two instances share nothing. Pair with a
-different `PORT` (and a different `VITE_API_BASE` when running the
-frontend against that instance) so both can run side by side on one
-machine, or just run each instance on its own machine/computer entirely.
-Nothing in the DB schema or API assumes a single global instance, so this
-required no other changes.
+`server/scheduler.ts` runs:
 
-## Next steps
+- Codex every 15 minutes
+- Vercel, OpenAI, and Gemini every 30 minutes
 
-1. Get a real `VERCEL_TOKEN` and confirm plan tier, run
-   `npm run collect:vercel` against it.
-2. Wire the statusline script into `~/.claude/settings.json` and confirm
-   the real payload shape against `SPECS.md` section 1a during a live
-   session; adjust field validation if the shape differs.
-3. Configure a Monitoring Viewer service account and
-   `GEMINI_GCP_PROJECT_ID`, then run `npm run collect:gemini` once to verify
-   real quota labels/response bytes. Gemini has no manual fallback.
-4. Keep Cursor unavailable on an individual plan. Revisit only if the
-   account gains Team/Business/Enterprise Admin API access.
+Every run calls `applyConfigToEnv()`, fetches locally accessible/platform data,
+normalizes it, and posts it through `collectors/ingest.ts`. Collector failures
+are posted to the same hosted store so the public `/api/errors` feed still
+shows broken or stale integrations.
+
+Run one collector directly:
+
+```sh
+npm run collect:codex
+npm run collect:vercel
+npm run collect:openai
+npm run collect:gemini
+```
+
+### Claude Code statusline
+
+Claude is push-driven rather than scheduled. Configure Claude Code to invoke:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "npx tsx C:/Users/Fourtys/Documents/Claude/Projects/token-app/collectors/claude/statusline.ts"
+  }
+}
+```
+
+The hook loads the same local config, posts valid normalized windows or a
+defensive collector error to Vercel, and still prints the short status string
+Claude Code expects.
+
+## Verification
+
+Repository-side verification completed on 2026-07-30:
+
+- Root TypeScript typecheck and emitted build pass.
+- Frontend TypeScript/Vite production build passes.
+- Source-scoped frontend lint passes.
+- The local collector transport was contract-tested against a mock HTTP
+  server, including the secret header and normalized usage/error bodies.
+- The hosted Express surface was contract-tested with an in-memory database
+  stub: public health/usage reads, `401` without the write secret, `201` with
+  the secret, and hidden hosted config status all behaved as intended.
+
+Those tests do not substitute for the required account-side checks. The
+deployment is complete only after a real Neon resource is connected, a
+production URL loads, `/api/usage` reaches the real database, and a local Codex
+collector record appears through that URL.
+
+Build verification:
+
+```sh
+npm run typecheck
+npm run build
+npm --prefix frontend run build
+```
+
+Hosted smoke checks:
+
+```sh
+curl https://<deployment>/api/health
+curl https://<deployment>/api/usage
+curl https://<deployment>/api/errors
+```
+
+A direct protected ingest probe can use a synthetic platform name:
+
+```sh
+curl -X POST https://<deployment>/api/ingest \
+  -H "Content-Type: application/json" \
+  -H "X-Token-App-Secret: <shared-secret>" \
+  -d '{"records":[{"platform":"deployment-check","window_start":"2026-07-30T00:00:00.000Z","window_end":"2026-07-30T00:01:00.000Z","metric":"round_trip","value":1,"unit":"count","fetched_at":"2026-07-30T00:01:00.000Z"}]}'
+```
+
+Then query:
+
+```sh
+curl https://<deployment>/api/usage/deployment-check
+```
+
+The preferred real round trip is `npm run collect:codex`, because it reads the
+owner's already-authenticated local Codex state and proves the complete path:
+local-only source, normalized POST, protected Vercel API, Postgres write, and
+public API read.
+
+## Redeploying
+
+From the repository root:
+
+```sh
+npm run typecheck
+npm run build
+npm --prefix frontend run build
+npx vercel --prod
+```
+
+If the GitHub repository is connected in Vercel, pushes to `main` may also
+deploy automatically. The explicit CLI command remains the reproducible manual
+path and prints the production URL.
+
+## Local configuration
+
+`server/config.ts` recognizes:
+
+- Hosted target: `TOKEN_APP_API_URL`, `TOKEN_APP_API_SECRET`
+- Vercel collector: `VERCEL_TOKEN`, `VERCEL_TEAM_ID`
+- OpenAI collector: `OPENAI_API_KEY`
+- Codex collector: `CODEX_HOME` (optional; defaults to `~/.codex`)
+- Gemini collector: `GOOGLE_APPLICATION_CREDENTIALS`,
+  `GEMINI_GCP_PROJECT_ID`
+- Plan overrides: `CLAUDE_PLAN`, `CODEX_PLAN`, `GEMINI_PLAN`,
+  `VERCEL_PLAN`, `CURSOR_PLAN`
+
+The hosted function needs only its database integration variables,
+`TOKEN_APP_WRITE_SECRET`, and optional non-secret plan override variables.
+Platform account credentials stay local.
+
+## Running a second, isolated instance
+
+The old local-only design used `DATA_DIR` to isolate a second SQLite database.
+The hosted database is now intentionally single-owner and has no tenancy
+column, so two people must not point collectors at the same deployment.
+
+For a genuinely isolated second owner:
+
+1. Create a second Vercel project.
+2. Provision/connect a separate Neon database.
+3. Set a different `TOKEN_APP_WRITE_SECRET`.
+4. Use a separate local `DATA_DIR` for that person's
+   `local-config.json`, plus the second deployment URL/secret.
+
+Example for the second local companion:
+
+```sh
+DATA_DIR=/path/to/second-owner-config PORT=8788 npm run server
+```
+
+`DATA_DIR` now isolates only local credentials/preferences. Hosted usage data
+is isolated by using a different Vercel project and database.
+
+## Collector source notes
+
+- Vercel: documented FOCUS `/v1/billing/charges` collector; a real billing
+  token/eligible team is still required for live charge data.
+- Codex: verified local CLI OAuth state plus the internal `wham/usage`
+  endpoint; source-reported `plan_type` is retained.
+- OpenAI: documented rate-limit headers and Admin organization usage API.
+- Gemini: documented Cloud Monitoring `consumer_quota` time series.
+- Claude: best-effort, defensively validated Claude Code statusline payload.
+- Cursor: intentionally unavailable for individual plans; there is no
+  manual/fake fallback.
+
+See `SPECS.md` for complete auth, field, refresh, and stability details.

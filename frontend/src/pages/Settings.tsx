@@ -29,6 +29,19 @@ const CONFIG_FIELDS: Array<{
   secret?: boolean;
 }> = [
   {
+    key: "TOKEN_APP_API_URL",
+    platform: "Token App",
+    label: "Hosted dashboard URL",
+    placeholder: "https://token-app.vercel.app",
+  },
+  {
+    key: "TOKEN_APP_API_SECRET",
+    platform: "Token App",
+    label: "Hosted ingest secret",
+    placeholder: "TOKEN_APP_API_SECRET",
+    secret: true,
+  },
+  {
     key: "VERCEL_TOKEN",
     platform: "Vercel",
     label: "Personal access token",
@@ -79,12 +92,14 @@ export function Settings() {
   const [planValues, setPlanValues] = useState<PlanSelections>({});
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const configStatus = config?.status;
+  const localConfigAvailable = config?.mode !== "hosted";
 
   useEffect(() => {
     if (config) setPlanValues(config.plans);
   }, [config]);
 
   async function saveField(configKey: keyof ConfigStatus) {
+    if (!localConfigAvailable) return;
     const value = values[configKey];
     if (!value) return;
 
@@ -100,6 +115,7 @@ export function Settings() {
   }
 
   async function savePlan(platformId: PlanPlatformId, planId: string) {
+    if (!localConfigAvailable) return;
     const previous = planValues[platformId];
     setPlanValues((current) => ({
       ...current,
@@ -137,9 +153,15 @@ export function Settings() {
           Settings
         </h1>
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-          Collector credentials are written to <code>data/local-config.json</code>, which is
-          gitignored. Existing values are never returned to the browser. Requires{" "}
-          <code>npm run server</code>.
+          {config?.mode === "hosted"
+            ? "This hosted dashboard is read-only for collector settings. Run the local companion and open the local Vite UI to save collector credentials and the hosted ingest target."
+            : (
+                <>
+                  Collector credentials are written to <code>data/local-config.json</code>, which is
+                  gitignored. Existing values are never returned to the browser. Requires{" "}
+                  <code>npm run server</code>.
+                </>
+              )}
         </p>
       </div>
 
@@ -212,7 +234,7 @@ export function Settings() {
                   <select
                     id={`${platformId}-plan`}
                     value={selectedId}
-                    disabled={configLoading}
+                    disabled={configLoading || !localConfigAvailable}
                     onChange={(event) =>
                       void savePlan(platformId, event.target.value)
                     }
@@ -297,7 +319,7 @@ export function Settings() {
                 />
                 <button
                   onClick={() => void saveField(field.key)}
-                  disabled={!values[field.key]}
+                  disabled={!values[field.key] || !localConfigAvailable}
                   className="rounded-md px-2.5 py-1.5 text-xs font-medium text-white disabled:opacity-40"
                   style={{ background: "var(--series-blue)" }}
                 >
@@ -323,9 +345,11 @@ export function Settings() {
           </div>
         )}
         <p className="mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
-          If the UI cannot reach the server, set the same environment variables before running{" "}
-          <code>npm run collect:*</code>, or edit <code>data/local-config.json</code> directly.
-          This is a credential setup fallback, not a manual usage-log path.
+          The two Token App fields tell local collectors where to POST their normalized output.
+          If the local UI cannot reach the companion server, set the same environment variables
+          before running <code>npm run collect:*</code>, or edit{" "}
+          <code>data/local-config.json</code> directly. This is a credential setup fallback, not
+          a manual usage-log path.
         </p>
       </section>
 

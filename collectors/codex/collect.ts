@@ -55,7 +55,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { insertCollectorError, insertUsageRecords, type UsageRecord } from "../../storage/db.js";
+import { insertCollectorError, insertUsageRecords, type UsageRecord } from "../ingest.js";
 import { applyConfigToEnv } from "../../server/config.js";
 
 const PLATFORM = "codex";
@@ -172,7 +172,7 @@ export async function collectCodexUsage(): Promise<{ recordsWritten: number }> {
     tokens = readLocalCodexAuth();
   } catch (err) {
     const message = (err as Error).message;
-    insertCollectorError({ platform: PLATFORM, occurred_at: fetchedAt, kind: "missing_credential", message });
+    await insertCollectorError({ platform: PLATFORM, occurred_at: fetchedAt, kind: "missing_credential", message });
     throw err;
   }
 
@@ -187,14 +187,14 @@ export async function collectCodexUsage(): Promise<{ recordsWritten: number }> {
     });
   } catch (err) {
     const message = `Network error calling Codex wham/usage: ${(err as Error).message}`;
-    insertCollectorError({ platform: PLATFORM, occurred_at: fetchedAt, kind: "network_error", message });
+    await insertCollectorError({ platform: PLATFORM, occurred_at: fetchedAt, kind: "network_error", message });
     throw new Error(message);
   }
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
     const message = `Codex wham/usage returned HTTP ${response.status}: ${body}`;
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: `http_${response.status}`,
@@ -209,7 +209,7 @@ export async function collectCodexUsage(): Promise<{ recordsWritten: number }> {
   try {
     data = JSON.parse(bodyText) as WhamUsageResponse;
   } catch {
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "invalid_json",
@@ -221,7 +221,7 @@ export async function collectCodexUsage(): Promise<{ recordsWritten: number }> {
 
   const planType = normalizePlanType(data.plan_type);
   if (!planType) {
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "missing_plan_type",
@@ -250,7 +250,7 @@ export async function collectCodexUsage(): Promise<{ recordsWritten: number }> {
   }
 
   if (!data.rate_limit || (data.rate_limit.primary_window == null && data.rate_limit.secondary_window == null)) {
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "missing_field",
@@ -260,7 +260,7 @@ export async function collectCodexUsage(): Promise<{ recordsWritten: number }> {
         "for the last verified shape.",
       raw: bodyText.slice(0, 2000),
     });
-    return { recordsWritten: insertUsageRecords(allRecords) };
+    return { recordsWritten: await insertUsageRecords(allRecords) };
   }
 
   const raw = JSON.stringify(data);
@@ -286,7 +286,7 @@ export async function collectCodexUsage(): Promise<{ recordsWritten: number }> {
     }
   }
 
-  const recordsWritten = insertUsageRecords(allRecords);
+  const recordsWritten = await insertUsageRecords(allRecords);
   return { recordsWritten };
 }
 

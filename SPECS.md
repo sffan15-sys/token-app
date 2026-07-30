@@ -1,5 +1,19 @@
 # Platform data specs
 
+## Delivery topology (all collectors)
+
+Collectors execute on the owner's computer because Claude and Codex depend on
+local CLI state, and the other pollers share the same local scheduler. They no
+longer write a local SQLite file. After normalization, every collector POSTs
+usage records and collector errors to the deployed Vercel Express API's
+`POST /api/ingest` endpoint with `X-Token-App-Secret`. The hosted API writes the
+unchanged two-table shape to Neon Postgres, which is the dashboard's single
+source of truth.
+
+The local helper reads `TOKEN_APP_API_URL` and `TOKEN_APP_API_SECRET` from the
+environment or gitignored `data/local-config.json`. Platform credentials stay
+local and are never sent to the ingest endpoint.
+
 Exact fields, sources, and access method for each platform, ranked by how
 solid the data source is. "Official tier" = documented and stable.
 "Best-effort tier" = real and working today but undocumented/could break.
@@ -15,9 +29,8 @@ Each entry: **Source** (what we read) · **Auth** (what credential it needs)
 ### 1a. Consumer session/weekly limits (Pro/Max) — the one you asked about first
 
 - **Source:** Claude Code's `statusLine` hook JSON payload (stdin), shipped
-  since CLI v2.1.6. Read by writing a tiny statusline script that, instead
-  of (or in addition to) rendering a status line, appends the payload to a
-  local file.
+  since CLI v2.1.6. A local statusline script renders the normal short status
+  and pushes normalized window records to the hosted ingest API.
 - **Auth:** none needed beyond being logged into Claude Code normally — it's
   local state Claude Code already has.
 - **Fields:**

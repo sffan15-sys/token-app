@@ -36,7 +36,7 @@
 import { createSign } from "node:crypto";
 import fs from "node:fs";
 import { applyConfigToEnv } from "../../server/config.js";
-import { insertCollectorError, insertUsageRecords, type UsageRecord } from "../../storage/db.js";
+import { insertCollectorError, insertUsageRecords, type UsageRecord } from "../ingest.js";
 
 const PLATFORM = "gemini";
 const MONITORING_API_BASE = "https://monitoring.googleapis.com";
@@ -139,13 +139,13 @@ function isoDaysAgo(days: number): string {
   return new Date(Date.now() - days * 86_400_000).toISOString();
 }
 
-function logCollectorError(
+async function logCollectorError(
   occurredAt: string,
   kind: string,
   message: string,
   raw?: string | null
-): void {
-  insertCollectorError({
+): Promise<void> {
+  await insertCollectorError({
     platform: PLATFORM,
     occurred_at: occurredAt,
     kind,
@@ -154,10 +154,12 @@ function logCollectorError(
   });
 }
 
-function readCredentials(fetchedAt: string): ServiceAccountCredentials | null {
+async function readCredentials(
+  fetchedAt: string
+): Promise<ServiceAccountCredentials | null> {
   const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
   if (!credentialsPath) {
-    logCollectorError(
+    await logCollectorError(
       fetchedAt,
       "missing_credential",
       "GOOGLE_APPLICATION_CREDENTIALS env var is not set. It must point to a " +
@@ -170,7 +172,7 @@ function readCredentials(fetchedAt: string): ServiceAccountCredentials | null {
   try {
     raw = fs.readFileSync(credentialsPath, "utf8");
   } catch (err) {
-    logCollectorError(
+    await logCollectorError(
       fetchedAt,
       "missing_credential",
       `Could not read the service-account key at GOOGLE_APPLICATION_CREDENTIALS: ${(err as Error).message}`
@@ -182,7 +184,7 @@ function readCredentials(fetchedAt: string): ServiceAccountCredentials | null {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    logCollectorError(
+    await logCollectorError(
       fetchedAt,
       "malformed_credential",
       "GOOGLE_APPLICATION_CREDENTIALS did not contain valid JSON. The key contents were not logged."
@@ -196,7 +198,7 @@ function readCredentials(fetchedAt: string): ServiceAccountCredentials | null {
     typeof (parsed as Partial<ServiceAccountCredentials>).client_email !== "string" ||
     typeof (parsed as Partial<ServiceAccountCredentials>).private_key !== "string"
   ) {
-    logCollectorError(
+    await logCollectorError(
       fetchedAt,
       "malformed_credential",
       "The service-account JSON key is missing client_email or private_key. The key contents were not logged."
@@ -242,7 +244,7 @@ async function getAccessToken(
   try {
     assertion = createJwtAssertion(credentials, tokenUri);
   } catch (err) {
-    logCollectorError(
+    await logCollectorError(
       fetchedAt,
       "malformed_credential",
       `Could not sign a service-account JWT: ${(err as Error).message}. The private key was not logged.`
@@ -261,7 +263,7 @@ async function getAccessToken(
       }),
     });
   } catch (err) {
-    logCollectorError(
+    await logCollectorError(
       fetchedAt,
       "auth_network_error",
       `Network error exchanging the Google service-account JWT: ${(err as Error).message}`
@@ -271,7 +273,7 @@ async function getAccessToken(
 
   const bodyText = await response.text();
   if (!response.ok) {
-    logCollectorError(
+    await logCollectorError(
       fetchedAt,
       `auth_http_${response.status}`,
       `Google OAuth token exchange returned HTTP ${response.status}: ${bodyText}`,
@@ -284,7 +286,7 @@ async function getAccessToken(
   try {
     tokenResponse = JSON.parse(bodyText) as OAuthTokenResponse;
   } catch {
-    logCollectorError(
+    await logCollectorError(
       fetchedAt,
       "malformed_auth_response",
       "Google OAuth token exchange returned invalid JSON.",
@@ -294,7 +296,7 @@ async function getAccessToken(
   }
 
   if (typeof tokenResponse.access_token !== "string" || !tokenResponse.access_token) {
-    logCollectorError(
+    await logCollectorError(
       fetchedAt,
       "malformed_auth_response",
       "Google OAuth token response had no access_token.",
@@ -464,7 +466,7 @@ async function listMetricTimeSeries(
         },
       });
     } catch (err) {
-      logCollectorError(
+      await logCollectorError(
         fetchedAt,
         "network_error",
         `Network error listing ${metricType} for ${service}: ${(err as Error).message}`
@@ -474,7 +476,7 @@ async function listMetricTimeSeries(
 
     const bodyText = await response.text();
     if (!response.ok) {
-      logCollectorError(
+      await logCollectorError(
         fetchedAt,
         `http_${response.status}`,
         `Cloud Monitoring timeSeries.list returned HTTP ${response.status} for ` +
@@ -488,7 +490,7 @@ async function listMetricTimeSeries(
     try {
       data = JSON.parse(bodyText) as ListTimeSeriesResponse;
     } catch {
-      logCollectorError(
+      await logCollectorError(
         fetchedAt,
         "malformed_response",
         `Cloud Monitoring returned invalid JSON for ${metricType} / ${service}.`,
@@ -500,7 +502,7 @@ async function listMetricTimeSeries(
     // An empty object is a valid no-data response. A present non-array
     // timeSeries field is a malformed shape.
     if (data.timeSeries !== undefined && !Array.isArray(data.timeSeries)) {
-      logCollectorError(
+      await logCollectorError(
         fetchedAt,
         "malformed_response",
         `Cloud Monitoring response had a non-array timeSeries field for ${metricType} / ${service}.`,
@@ -523,7 +525,7 @@ async function listMetricTimeSeries(
         : undefined;
     pageCount++;
     if (pageCount >= 100 && pageToken) {
-      logCollectorError(
+      await logCollectorError(
         fetchedAt,
         "pagination_limit",
         `Stopped Cloud Monitoring pagination after 100 pages for ${metricType} / ${service}.`
@@ -541,7 +543,7 @@ export async function collectGeminiUsage(
   const fetchedAt = new Date().toISOString();
   const projectId = process.env.GEMINI_GCP_PROJECT_ID;
   if (!projectId) {
-    logCollectorError(
+    await logCollectorError(
       fetchedAt,
       "missing_project_id",
       "GEMINI_GCP_PROJECT_ID env var is not set. It must name the GCP project backing the Gemini API key."
@@ -549,7 +551,7 @@ export async function collectGeminiUsage(
     return emptyResult();
   }
 
-  const credentials = readCredentials(fetchedAt);
+  const credentials = await readCredentials(fetchedAt);
   if (!credentials) return emptyResult();
 
   const accessToken = await getAccessToken(credentials, fetchedAt);
@@ -580,14 +582,14 @@ export async function collectGeminiUsage(
       if (result.failed) {
         // Authentication/permission/API failures generally affect every
         // subsequent request too, so stop rather than generating 19 copies.
-        const recordsWritten = insertUsageRecords(allRecords);
+        const recordsWritten = await insertUsageRecords(allRecords);
         return { recordsWritten, timeSeriesSeen, pointsSeen, pointsSkipped };
       }
     }
   }
 
   if (pointsSkipped > 0) {
-    logCollectorError(
+    await logCollectorError(
       fetchedAt,
       "malformed_response",
       `${pointsSkipped} of ${pointsSeen} Cloud Monitoring point(s) did not match the ` +
@@ -595,7 +597,7 @@ export async function collectGeminiUsage(
     );
   }
 
-  const recordsWritten = insertUsageRecords(allRecords);
+  const recordsWritten = await insertUsageRecords(allRecords);
   return { recordsWritten, timeSeriesSeen, pointsSeen, pointsSkipped };
 }
 

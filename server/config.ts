@@ -20,8 +20,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Same DATA_DIR override as storage/db.ts - keep them in sync so one
-// instance's DB and config always live together.
+// DATA_DIR now isolates only the local companion's credential/preferences
+// file. Hosted usage data lives in the deployment's Postgres database.
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : path.join(__dirname, "..", "data");
@@ -29,6 +29,8 @@ const CONFIG_PATH = path.join(DATA_DIR, "local-config.json");
 
 /** Secret/path values are exposed to the frontend as set/unset booleans only. */
 export const CREDENTIAL_CONFIG_KEYS = {
+  TOKEN_APP_API_URL: "TOKEN_APP_API_URL",
+  TOKEN_APP_API_SECRET: "TOKEN_APP_API_SECRET",
   VERCEL_TOKEN: "VERCEL_TOKEN",
   VERCEL_TEAM_ID: "VERCEL_TEAM_ID",
   OPENAI_API_KEY: "OPENAI_API_KEY",

@@ -39,7 +39,8 @@
  *   runtime dependency in the hook path is preferred - see README.)
  */
 
-import { insertCollectorError, insertUsageRecords, type UsageRecord } from "../../storage/db.js";
+import { applyConfigToEnv } from "../../server/config.js";
+import { insertCollectorError, insertUsageRecords, type UsageRecord } from "../ingest.js";
 
 const PLATFORM = "claude";
 
@@ -93,14 +94,14 @@ export interface ProcessResult {
   hadError: boolean;
 }
 
-export function processStatusLinePayload(raw: string): ProcessResult {
+export async function processStatusLinePayload(raw: string): Promise<ProcessResult> {
   const fetchedAt = new Date().toISOString();
 
   let payload: StatusLinePayload;
   try {
     payload = JSON.parse(raw);
   } catch (err) {
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "invalid_json",
@@ -111,7 +112,7 @@ export function processStatusLinePayload(raw: string): ProcessResult {
   }
 
   if (typeof payload !== "object" || payload === null || typeof payload.rate_limits !== "object" || payload.rate_limits === null) {
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "missing_field",
@@ -126,7 +127,7 @@ export function processStatusLinePayload(raw: string): ProcessResult {
   const problems = [...fiveHour.problems, ...sevenDay.problems];
 
   if (problems.length > 0) {
-    insertCollectorError({
+    await insertCollectorError({
       platform: PLATFORM,
       occurred_at: fetchedAt,
       kind: "invalid_shape",
@@ -185,7 +186,7 @@ export function processStatusLinePayload(raw: string): ProcessResult {
     );
   }
 
-  const recordsWritten = insertUsageRecords(records);
+  const recordsWritten = await insertUsageRecords(records);
 
   const parts: string[] = [];
   if (fiveHour.ok) parts.push(`5h: ${fiveHour.ok.used_percentage.toFixed(0)}%`);
@@ -205,17 +206,18 @@ async function readStdin(): Promise<string> {
 
 const isMain = process.argv[1]?.replace(/\\/g, "/").endsWith("collectors/claude/statusline.ts");
 if (isMain) {
+  applyConfigToEnv();
   readStdin()
-    .then((raw) => {
-      const result = processStatusLinePayload(raw);
+    .then(async (raw) => {
+      const result = await processStatusLinePayload(raw);
       // Claude Code renders whatever we print on stdout as the status line.
       process.stdout.write(result.statusLineText);
     })
-    .catch((err) => {
+    .catch(async (err) => {
       // Never let the hook crash Claude Code's UI - degrade to a visible
       // marker on the status line plus a best-effort error record.
       try {
-        insertCollectorError({
+        await insertCollectorError({
           platform: PLATFORM,
           occurred_at: new Date().toISOString(),
           kind: "unhandled_exception",

@@ -4,3 +4,6 @@ dist/
 *.log
 .env
 .env.*
+/.tmp-npm-cache/
+/public/
+/.vercel/

@@ -16,7 +16,7 @@
  * down the scheduler/API process.
  */
 
-import { insertCollectorError } from "../storage/db.js";
+import { insertCollectorError } from "../collectors/ingest.js";
 import { applyConfigToEnv } from "./config.js";
 import { collectVercelUsage } from "../collectors/vercel/collect.js";
 import { collectCodexUsage } from "../collectors/codex/collect.js";
@@ -50,7 +50,7 @@ async function runJob(job: ScheduledJob): Promise<void> {
     // silently losing the signal, and — most importantly — never let it crash the process.
     const message = err instanceof Error ? err.message : String(err);
     try {
-      insertCollectorError({
+      await insertCollectorError({
         platform: job.platform,
         occurred_at: new Date().toISOString(),
         kind: "scheduler_uncaught",
