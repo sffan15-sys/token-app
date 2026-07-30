@@ -23,24 +23,20 @@ export function AlertStrip({ alerts }: { alerts: Alert[] }) {
   if (active.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col divide-y overflow-hidden rounded-md border text-sm" style={{ borderColor: "var(--border)" }}>
       {active.map((alert) => {
         const colors = SEVERITY_VAR[alert.severity];
         return (
           <div
             key={alert.id}
-            className="flex items-start gap-3 rounded-lg border px-3 py-2 text-sm"
-            style={{
-              background: `var(${colors.bg})`,
-              borderColor: "var(--border)",
-              color: "var(--text-primary)",
-            }}
+            className="flex items-start gap-3 px-3 py-1.5"
+            style={{ borderColor: "var(--border)", color: "var(--text-primary)" }}
           >
             <span
-              className="mt-0.5 h-2 w-2 shrink-0 rounded-full"
+              className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full"
               style={{ background: `var(${colors.fg})` }}
             />
-            <span className="flex-1">
+            <span className="flex-1 leading-snug">
               {alert.message}
               {alert.businessTag && (
                 <span className="ml-1.5 font-medium" style={{ color: `var(${colors.fg})` }}>
