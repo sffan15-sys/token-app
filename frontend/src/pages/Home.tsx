@@ -5,9 +5,9 @@ import { PlatformTable } from "../components/PlatformTable";
 import { MOCK_ALERTS, MOCK_USAGE_RECORDS, PLATFORMS } from "../data/mockData";
 
 /**
- * Three clearly labeled, visually distinct zones, matching the owner's own
- * framing of "at a glance I want: (1) all accounts' status, (2) $/month
- * across all platforms, (3) current usage." See
+ * Three clearly labeled, visually distinct zones: alerts, then current
+ * usage (the bars/table), then cost last — current status matters more
+ * than the monthly total at a glance. See
  * design/persona-fixes-changelog.md for why this restructure happened.
  */
 export function Home() {
@@ -22,17 +22,17 @@ export function Home() {
 
       <section className="flex flex-col gap-3">
         <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-          Cost summary
-        </h2>
-        <CostSummary records={MOCK_USAGE_RECORDS} />
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
           Usage right now
         </h2>
         <PlatformTable platforms={PLATFORMS} records={MOCK_USAGE_RECORDS} />
         <IdleHeadroomPanel records={MOCK_USAGE_RECORDS} />
+      </section>
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+          Cost summary
+        </h2>
+        <CostSummary records={MOCK_USAGE_RECORDS} />
       </section>
     </div>
   );
