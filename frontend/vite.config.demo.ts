@@ -8,6 +8,9 @@ import { viteSingleFile } from 'vite-plugin-singlefile'
 export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss(), viteSingleFile()],
+  define: {
+    'import.meta.env.VITE_DEMO_MODE': JSON.stringify('true'),
+  },
   build: {
     outDir: 'dist-demo',
     cssCodeSplit: false,

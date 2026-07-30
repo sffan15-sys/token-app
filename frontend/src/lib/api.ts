@@ -8,8 +8,17 @@
  */
 import { useEffect, useState } from "react";
 import type { UsageRecord } from "../types";
+import { MOCK_USAGE_RECORDS } from "../data/mockData";
 
-const API_BASE = (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_API_BASE || "http://localhost:8787";
+const ENV = (import.meta as unknown as { env?: Record<string, string> }).env ?? {};
+const API_BASE = ENV.VITE_API_BASE || "http://localhost:8787";
+/**
+ * Set by vite.config.demo.ts for the single-file shareable demo build, which
+ * has no backend behind it (it's a static file on GitHub Pages / a claude.ai
+ * artifact). In that mode, serve mock data instead of hitting a localhost
+ * API that will never be reachable from the viewer's machine.
+ */
+const DEMO_MODE = ENV.VITE_DEMO_MODE === "true";
 
 export interface CollectorErrorRow {
   id: number;
@@ -49,16 +58,28 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 export function fetchLatestUsage(): Promise<UsageRecord[]> {
+  if (DEMO_MODE) return Promise.resolve(MOCK_USAGE_RECORDS);
   return getJson<{ records: UsageRecord[] }>("/api/usage").then((d) => d.records);
 }
 
 export function fetchPlatformUsage(platform: string): Promise<UsageRecord[]> {
+  if (DEMO_MODE) return Promise.resolve(MOCK_USAGE_RECORDS.filter((r) => r.platform === platform));
   return getJson<{ records: UsageRecord[] }>(`/api/usage/${encodeURIComponent(platform)}`).then((d) => d.records);
 }
 
 export function fetchErrors(): Promise<CollectorErrorRow[]> {
+  if (DEMO_MODE) return Promise.resolve([]);
   return getJson<{ errors: CollectorErrorRow[] }>("/api/errors").then((d) => d.errors);
 }
+
+const DEMO_CONFIG_STATUS: ConfigStatus = {
+  VERCEL_TOKEN: false,
+  VERCEL_TEAM_ID: false,
+  OPENAI_API_KEY: false,
+  CODEX_HOME: false,
+  GOOGLE_APPLICATION_CREDENTIALS: false,
+  GEMINI_GCP_PROJECT_ID: false,
+};
 
 export function postManualLog(entry: {
   platform: string;
@@ -67,14 +88,21 @@ export function postManualLog(entry: {
   unit?: string;
   businessTag?: string;
 }): Promise<{ record: UsageRecord }> {
+  if (DEMO_MODE) {
+    return Promise.reject(new Error("This is a static demo build with no backend — manual log entries aren't saved here."));
+  }
   return postJson("/api/manual-log", entry);
 }
 
 export function fetchConfigStatus(): Promise<ConfigStatus> {
+  if (DEMO_MODE) return Promise.resolve(DEMO_CONFIG_STATUS);
   return getJson<{ status: ConfigStatus }>("/api/config").then((d) => d.status);
 }
 
 export function saveConfig(patch: Partial<Record<keyof ConfigStatus, string>>): Promise<ConfigStatus> {
+  if (DEMO_MODE) {
+    return Promise.reject(new Error("This is a static demo build with no backend — settings aren't saved here."));
+  }
   return postJson<{ status: ConfigStatus }>("/api/config", patch).then((d) => d.status);
 }
 
