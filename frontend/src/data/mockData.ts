@@ -1,10 +1,20 @@
 /**
- * Mock data layer. Shaped exactly like storage/db.ts's UsageRecord so a
- * real fetch client can replace this module later without any component
- * changes. Deliberately mixes rich time-series platforms (Claude, Codex,
- * Vercel) with sparse manual-log platforms (Gemini, Cursor) per
- * SPECS.md's confirmed-vs-best-effort/manual breakdown, so the UI is
- * built and tested against both cases from day one.
+ * Mock data layer.
+ *
+ * `PLATFORMS` below is real, static UI metadata (labels/colors/window
+ * shapes/illustrative monthly cost) — it is NOT mock telemetry and is
+ * still imported by the running app (components, Settings, etc).
+ *
+ * `MOCK_USAGE_RECORDS` / `MOCK_ALERTS` ARE mock telemetry. As of the
+ * backend/API work (server/, frontend/src/lib/api.ts), the running app no
+ * longer displays these — Home/Alerts/PlatformDetail fetch real data from
+ * the local API server instead. This module (and its two mock exports) is
+ * kept only for local dev/testing without a live server/DB running (e.g.
+ * component work in isolation) — shaped exactly like storage/db.ts's
+ * UsageRecord so it stayed a drop-in stand-in while the real pipeline was
+ * being built. Deliberately mixes rich time-series platforms (Claude,
+ * Codex, Vercel) with sparse manual-log platforms (Gemini, Cursor) per
+ * SPECS.md's confirmed-vs-best-effort/manual breakdown.
  */
 import type { Alert, PlatformMeta, UsageRecord } from "../types";
 

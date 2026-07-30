@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { PLATFORMS } from "../data/mockData";
+import { fetchConfigStatus, postManualLog, saveConfig, useFetch, type ConfigStatus } from "../lib/api";
 
 const THRESHOLDS = [
   { label: "Approaching-limit warning", value: "70% used" },
@@ -9,24 +10,58 @@ const THRESHOLDS = [
   { label: "Stale-collector meta alert", value: "No reading in 6h" },
 ];
 
+/** Only these platforms have a token this app's collectors actually read (see server/config.ts).
+ * Gemini/Cursor stay manual-log-only per CLAUDE.md/SPECS.md — untouched, no config key for them. */
+const CONFIG_KEY_BY_PLATFORM: Record<string, keyof ConfigStatus> = {
+  vercel: "VERCEL_TOKEN",
+  openai: "OPENAI_API_KEY",
+  codex: "OPENAI_API_KEY", // Codex collector reads local CLI auth, not this field — see label override below.
+};
+
 export function Settings() {
+  const { data: configStatus, reload: reloadConfig } = useFetch(fetchConfigStatus);
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [manualPlatform, setManualPlatform] = useState(PLATFORMS.find((p) => p.tier === "manual")?.id ?? "");
   const [manualValue, setManualValue] = useState("");
   const [manualBusinessTag, setManualBusinessTag] = useState("");
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [keySavedMsg, setKeySavedMsg] = useState<string | null>(null);
 
   const manualPlatforms = PLATFORMS.filter((p) => p.tier === "manual");
 
-  function logReading() {
+  async function logReading() {
     if (!manualValue) return;
-    const tagSuffix = manualBusinessTag.trim() ? ` for ${manualBusinessTag.trim()}` : "";
-    setSavedMsg(
-      `Logged ${manualValue}% for ${PLATFORMS.find((p) => p.id === manualPlatform)?.label}${tagSuffix} (mock — not persisted).`
-    );
-    setManualValue("");
-    setManualBusinessTag("");
-    setTimeout(() => setSavedMsg(null), 3000);
+    try {
+      await postManualLog({
+        platform: manualPlatform,
+        value: Number(manualValue),
+        businessTag: manualBusinessTag.trim() || undefined,
+      });
+      const tagSuffix = manualBusinessTag.trim() ? ` for ${manualBusinessTag.trim()}` : "";
+      setSavedMsg(
+        `Logged ${manualValue}% for ${PLATFORMS.find((p) => p.id === manualPlatform)?.label}${tagSuffix}.`
+      );
+      setManualValue("");
+      setManualBusinessTag("");
+    } catch (err) {
+      setSavedMsg(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setTimeout(() => setSavedMsg(null), 4000);
+  }
+
+  async function saveKey(platformId: string) {
+    const configKey = CONFIG_KEY_BY_PLATFORM[platformId];
+    const value = keys[platformId];
+    if (!configKey || value === undefined) return;
+    try {
+      await saveConfig({ [configKey]: value } as Partial<Record<keyof ConfigStatus, string>>);
+      setKeySavedMsg(`Saved. Collectors will pick this up on their next scheduled run.`);
+      setKeys((k) => ({ ...k, [platformId]: "" }));
+      reloadConfig();
+    } catch (err) {
+      setKeySavedMsg(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    setTimeout(() => setKeySavedMsg(null), 4000);
   }
 
   return (
@@ -36,7 +71,8 @@ export function Settings() {
           Settings
         </h1>
         <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-          API keys are mocked/local-only for now — no backend to send them to yet.
+          API keys are written to a local git-ignored config file (data/local-config.json) by the
+          API server — never committed, never logged. Requires <code>npm run server</code> running.
         </p>
       </div>
 
@@ -99,23 +135,57 @@ export function Settings() {
           API keys / tokens
         </h2>
         <div className="flex flex-col gap-3">
-          {PLATFORMS.map((p) => (
-            <div key={p.id} className="flex items-center gap-3">
-              <label className="w-40 text-sm shrink-0" style={{ color: "var(--text-secondary)" }}>
-                {p.label}
-              </label>
-              <input
-                type="password"
-                placeholder={p.tier === "official" ? "paste token…" : "no API available — manual log only"}
-                disabled={p.tier === "manual"}
-                value={keys[p.id] ?? ""}
-                onChange={(e) => setKeys((k) => ({ ...k, [p.id]: e.target.value }))}
-                className="flex-1 rounded-md border px-2 py-1.5 text-sm disabled:opacity-50"
-                style={{ borderColor: "var(--border)", background: "var(--surface-raised)", color: "var(--text-primary)" }}
-              />
-            </div>
-          ))}
+          {PLATFORMS.map((p) => {
+            const configKey = CONFIG_KEY_BY_PLATFORM[p.id];
+            const isSet = configKey && configStatus ? configStatus[configKey] : false;
+            const disabled = p.tier === "manual" || !configKey;
+            const placeholder =
+              p.id === "codex"
+                ? "reads Codex CLI's own local login — nothing to paste here"
+                : disabled
+                  ? "no API available — manual log only"
+                  : isSet
+                    ? "•••••••• (saved — paste a new value to replace)"
+                    : "paste token…";
+            return (
+              <div key={p.id} className="flex items-center gap-3">
+                <label className="w-40 shrink-0 text-sm" style={{ color: "var(--text-secondary)" }}>
+                  {p.label}
+                  {isSet && <span className="ml-1 text-xs" style={{ color: "var(--status-good)" }}>●</span>}
+                </label>
+                <input
+                  type="password"
+                  placeholder={placeholder}
+                  disabled={disabled || p.id === "codex"}
+                  value={keys[p.id] ?? ""}
+                  onChange={(e) => setKeys((k) => ({ ...k, [p.id]: e.target.value }))}
+                  className="flex-1 rounded-md border px-2 py-1.5 text-sm disabled:opacity-50"
+                  style={{ borderColor: "var(--border)", background: "var(--surface-raised)", color: "var(--text-primary)" }}
+                />
+                {!disabled && p.id !== "codex" && (
+                  <button
+                    onClick={() => saveKey(p.id)}
+                    className="rounded-md px-2.5 py-1.5 text-xs font-medium text-white"
+                    style={{ background: "var(--series-blue)" }}
+                  >
+                    Save
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
+        {keySavedMsg && (
+          <div className="mt-2 text-xs" style={{ color: "var(--status-good)" }}>
+            {keySavedMsg}
+          </div>
+        )}
+        <p className="mt-3 text-xs" style={{ color: "var(--text-muted)" }}>
+          Manual fallback if the UI can't reach the server: set the env var directly (
+          <code>VERCEL_TOKEN</code>, <code>OPENAI_API_KEY</code>) before running{" "}
+          <code>npm run collect:*</code>, or edit <code>data/local-config.json</code> by hand — see
+          README.md.
+        </p>
       </section>
 
       <section className="rounded-xl border p-4" style={{ background: "var(--surface-card)", borderColor: "var(--border)" }}>

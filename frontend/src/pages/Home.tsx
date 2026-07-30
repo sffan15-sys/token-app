@@ -1,7 +1,8 @@
 import { CostSummary } from "../components/CostSummary";
 import { IdleHeadroomPanel } from "../components/IdleHeadroomPanel";
 import { PlatformTable } from "../components/PlatformTable";
-import { MOCK_USAGE_RECORDS, PLATFORMS } from "../data/mockData";
+import { PLATFORMS } from "../data/mockData";
+import { fetchLatestUsage, useFetch } from "../lib/api";
 
 /**
  * Usage first, cost second. Alerts have their own nav tab (Alerts.tsx) and
@@ -11,21 +12,50 @@ import { MOCK_USAGE_RECORDS, PLATFORMS } from "../data/mockData";
  * history on this page's layout.
  */
 export function Home() {
+  const { data: records, loading, error } = useFetch(fetchLatestUsage);
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-6xl p-4 text-sm sm:p-6" style={{ color: "var(--text-muted)" }}>
+        Loading usage…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-6xl p-4 sm:p-6">
+        <div className="rounded-lg border p-4 text-sm" style={{ borderColor: "var(--status-critical)", color: "var(--text-primary)" }}>
+          Couldn't reach the API server ({error}). Start it with <code>npm run server</code> from the
+          project root, then reload.
+        </div>
+      </div>
+    );
+  }
+
+  const usageRecords = records ?? [];
+
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-8 p-4 sm:p-6">
       <section className="flex flex-col gap-3">
         <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
           Usage right now
         </h2>
-        <PlatformTable platforms={PLATFORMS} records={MOCK_USAGE_RECORDS} />
-        <IdleHeadroomPanel records={MOCK_USAGE_RECORDS} />
+        <PlatformTable platforms={PLATFORMS} records={usageRecords} />
+        {usageRecords.length === 0 && (
+          <div className="rounded-lg border p-3 text-xs" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+            No data yet — run a collector (<code>npm run collect:vercel</code>, etc, or start{" "}
+            <code>npm run server</code> to run them on a schedule) or log a manual reading in Settings.
+          </div>
+        )}
+        <IdleHeadroomPanel records={usageRecords} />
       </section>
 
       <section className="flex flex-col gap-3">
         <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
           Cost summary
         </h2>
-        <CostSummary records={MOCK_USAGE_RECORDS} />
+        <CostSummary records={usageRecords} />
       </section>
     </div>
   );

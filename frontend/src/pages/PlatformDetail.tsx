@@ -3,10 +3,12 @@ import { Gauge } from "../components/Gauge";
 import { StatusPill } from "../components/StatusPill";
 import { UsageHistoryChart } from "../components/UsageHistoryChart";
 import { EfficiencyBars } from "../components/EfficiencyBars";
-import { MOCK_USAGE_RECORDS, PLATFORMS } from "../data/mockData";
+import { PLATFORMS } from "../data/mockData";
+import { fetchPlatformUsage, useFetch } from "../lib/api";
 import { formatDuration, formatRelativeTime, formatShortTime } from "../lib/format";
 import { isPoolPlatform, pastWindowPeaks, poolSnapshot, snapshotForWindow } from "../lib/selectors";
 import { statusForUsage } from "../lib/status";
+import type { UsageRecord } from "../types";
 
 const SERIES_VAR: Record<string, string> = {
   blue: "--series-blue",
@@ -33,6 +35,28 @@ export function PlatformDetail() {
   const color = `var(${SERIES_VAR[meta.color]})`;
   const pooled = isPoolPlatform(meta);
 
+  const { data: records, loading, error } = useFetch(() => fetchPlatformUsage(meta.id), [meta.id]);
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-4xl p-4 text-sm sm:p-6" style={{ color: "var(--text-muted)" }}>
+        Loading…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-4xl p-4 sm:p-6">
+        <div className="rounded-lg border p-4 text-sm" style={{ borderColor: "var(--status-critical)", color: "var(--text-primary)" }}>
+          Couldn't reach the API server ({error}). Start it with <code>npm run server</code>.
+        </div>
+      </div>
+    );
+  }
+
+  const usageRecords: UsageRecord[] = records ?? [];
+
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6 p-4 sm:p-6">
       <div>
@@ -50,14 +74,20 @@ export function PlatformDetail() {
       </div>
 
       {pooled ? (
-        <PoolDetail platformId={meta.id} color={color} />
+        <PoolDetail platformId={meta.id} color={color} records={usageRecords} />
       ) : (
         <div className="flex flex-col gap-6">
+          {usageRecords.length === 0 && (
+            <div className="rounded-lg border p-3 text-xs" style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}>
+              No readings yet for {meta.label}. Run its collector, or log a reading in Settings if
+              it's manual-log only.
+            </div>
+          )}
           {meta.windows.map((w) => {
-            const snap = snapshotForWindow(MOCK_USAGE_RECORDS, meta.id, w);
+            const snap = snapshotForWindow(usageRecords, meta.id, w);
             const status = statusForUsage(snap.usedPercent, snap.lastFetchedAt, meta.tier === "manual" ? "slow" : "live");
             const chartData = snap.series.map((r) => ({ fetched_at: r.fetched_at, value: r.value }));
-            const pastPeaks = pastWindowPeaks(MOCK_USAGE_RECORDS, meta.id, w, snap.latest?.window_start ?? null).map((p) => ({
+            const pastPeaks = pastWindowPeaks(usageRecords, meta.id, w, snap.latest?.window_start ?? null).map((p) => ({
               windowStart: p.windowStart,
               peak: p.peak,
             }));
@@ -114,15 +144,15 @@ export function PlatformDetail() {
             );
           })}
 
-          <RawReadingsTable platformId={meta.id} />
+          <RawReadingsTable records={usageRecords} />
         </div>
       )}
     </div>
   );
 }
 
-function PoolDetail({ platformId, color }: { platformId: string; color: string }) {
-  const snap = poolSnapshot(MOCK_USAGE_RECORDS, platformId);
+function PoolDetail({ platformId, color, records }: { platformId: string; color: string; records: UsageRecord[] }) {
+  const snap = poolSnapshot(records, platformId);
   const status = statusForUsage(snap.usedPercent, snap.latest?.fetched_at ?? null, "slow");
   const chartData = snap.series.map((r) => ({ fetched_at: r.fetched_at, value: r.value }));
 
@@ -159,15 +189,13 @@ function PoolDetail({ platformId, color }: { platformId: string; color: string }
           </div>
         )}
       </section>
-      <RawReadingsTable platformId={platformId} />
+      <RawReadingsTable records={records} />
     </div>
   );
 }
 
-function RawReadingsTable({ platformId }: { platformId: string }) {
-  const rows = MOCK_USAGE_RECORDS.filter((r) => r.platform === platformId)
-    .sort((a, b) => b.fetched_at.localeCompare(a.fetched_at))
-    .slice(0, 20);
+function RawReadingsTable({ records }: { records: UsageRecord[] }) {
+  const rows = [...records].sort((a, b) => b.fetched_at.localeCompare(a.fetched_at)).slice(0, 20);
 
   return (
     <section className="rounded-xl border p-4" style={{ background: "var(--surface-card)", borderColor: "var(--border)" }}>

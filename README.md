@@ -110,6 +110,121 @@ echo '{"foo":"bar"}' | npx tsx collectors/claude/statusline.ts
 npx tsx collectors/vercel/collect.ts
 ```
 
+## Backend API server + scheduler + frontend wiring (2026-07-30)
+
+Added the piece that was missing before: a real backend and a frontend that
+actually reads from it, instead of `frontend/src/data/mockData.ts`.
+
+- **`server/app.ts`** — a small Express API, no auth (single-user local
+  tool). Endpoints:
+  - `GET /api/usage` — latest reading per `(platform, metric)`.
+  - `GET /api/usage/:platform` — full history for one platform
+    (`?limit=` caps rows, default 2000).
+  - `GET /api/errors` — recent `collector_errors` rows.
+  - `POST /api/manual-log` — `{ platform, value, businessTag? }` (matches
+    Settings.tsx's manual-log form); also accepts optional
+    `metric`/`unit`/`window_start`/`window_end` overrides.
+  - `GET /api/config` / `POST /api/config` — read/write which API
+    keys are set (GET returns booleans only, never values).
+- **`server/config.ts`** — local plaintext key storage at
+  `data/local-config.json` (under the already-gitignored `/data/`
+  directory — double-checked it never gets committed). `applyConfigToEnv()`
+  copies saved keys into `process.env` so `npm run collect:*`,
+  `npm run server`, and the scheduler all pick them up without the owner
+  exporting env vars by hand. Values are never logged or printed anywhere
+  (checked all three collectors for accidental token logging — none found;
+  they only log a masked/absent-token message).
+- **`server/scheduler.ts`** — `setInterval`-based runner: Vercel + OpenAI
+  every 30 min, Codex every 15 min. Claude is deliberately **not** in this
+  loop — it's a `statusLine` hook Claude Code itself invokes on every turn
+  (push, not poll), so polling it makes no sense; see the statusline
+  section above for its own wiring. Every job is wrapped in try/catch so a
+  collector failure (missing token, HTTP error, etc — all of which the
+  collectors already log to `collector_errors` themselves) can never crash
+  the server process; the scheduler also writes its own backstop
+  `collector_errors` row (kind `scheduler_uncaught`) for anything that
+  slips past a collector's own handling.
+- **`server/index.ts`** — combined process: starts the Express app and the
+  scheduler together (kept as one process deliberately — a second process
+  buys nothing for a single-user local tool). `NO_SCHEDULER=1` runs the API
+  only.
+- **Frontend** (`frontend/src/lib/api.ts`, `frontend/src/lib/alerts.ts`):
+  plain fetch + a small `useFetch` hook (no React Query — kept deps
+  minimal). `Home.tsx`, `PlatformDetail.tsx`, `Alerts.tsx`, `Settings.tsx`
+  now fetch real data and render a loading state, an explicit "couldn't
+  reach the API server" error state, and a "no data yet — run a collector"
+  empty state instead of crashing on an empty/fresh DB. `Alerts.tsx` no
+  longer uses hand-authored `MOCK_ALERTS`; `lib/alerts.ts` derives real
+  alerts (approaching-limit, stale-collector, and a passthrough per
+  `collector_errors` row) from live snapshots — there's still no
+  baseline/burn-rate anomaly engine (CLAUDE.md Step 3/4 says "not
+  started"), so burn-rate/idle-allowance/window-refreshed alert kinds
+  aren't produced yet.
+  `frontend/src/data/mockData.ts` is unchanged in shape but re-scoped: its
+  `PLATFORMS` export is real static UI metadata and is still used; only
+  `MOCK_USAGE_RECORDS`/`MOCK_ALERTS` are dev-only fakes, no longer
+  rendered by the running app (see the comment at the top of that file).
+
+### Running this end-to-end
+
+```sh
+# 1. one-time
+npm install
+cd frontend && npm install && cd ..
+
+# 2. backend: API server + scheduler (same process), default port 8787
+npm run server
+# API only, no scheduler:
+npm run server:no-scheduler
+
+# 3. frontend dev server (separate terminal)
+cd frontend && npm run dev
+# open the printed localhost URL — Settings > API keys/tokens is where
+# VERCEL_TOKEN / OPENAI_API_KEY actually get saved now (POST /api/config),
+# instead of hand-editing files. Codex reads its own CLI login
+# (~/.codex/auth.json) automatically, nothing to paste for it.
+```
+
+If the frontend can't reach `http://localhost:8787` (different port, CORS,
+server not started), every page shows an explicit "couldn't reach the API
+server — start it with `npm run server`" message rather than a blank
+crash. Override the API base with `VITE_API_BASE` if the server isn't on
+the default port.
+
+**Manual fallback for API keys** if the Settings UI path has issues: set
+`VERCEL_TOKEN` / `OPENAI_API_KEY` (and optionally `VERCEL_TEAM_ID`,
+`CODEX_HOME`) as real env vars before running `npm run collect:*` /
+`npm run server`, or hand-edit `data/local-config.json` directly (same
+shape `POST /api/config` writes — plain JSON, gitignored, never logged).
+
+### What's verified vs not (this pass)
+
+Verified locally (no external credentials required):
+- `npm run typecheck` and `npm run build` pass for the root project
+  (collectors + storage + **server**).
+- `cd frontend && npm run build` passes.
+- API server starts against an empty DB; `GET /api/usage`,
+  `GET /api/errors` return sensible empty arrays; `POST /api/manual-log`
+  and `POST /api/config` round-trip correctly (curl-tested); saved config
+  values confirmed present in `data/local-config.json` and confirmed
+  *absent* from anything printed to the console.
+- Scheduler starts, runs all three interval jobs immediately, and — with
+  no `VERCEL_TOKEN`/`OPENAI_API_KEY` configured on this machine — correctly
+  logs `missing_token` errors to `collector_errors` instead of crashing the
+  process. The Codex job, notably, **succeeded for real** against this
+  machine's already-logged-in Codex CLI session and wrote a live record —
+  the first real end-to-end proof this pipeline works end to end, not just
+  against synthetic data.
+
+Not verified (no `VERCEL_TOKEN`/Admin `OPENAI_API_KEY` available in this
+environment): Vercel collector against a real Pro/Enterprise team, OpenAI
+organization-usage endpoint against a real Admin key, and the frontend
+rendering real (not empty) usage data end-to-end in a browser — the API
+shapes were confirmed by curl and the `useFetch`/selector code is unchanged
+from what already worked against `MOCK_USAGE_RECORDS` (same `UsageRecord[]`
+shape in, same components), but an actual browser render was not screenshot
+-verified in this pass.
+
 ## Next steps
 
 1. Get a real `VERCEL_TOKEN` and confirm plan tier, run
