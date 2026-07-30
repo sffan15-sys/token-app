@@ -75,13 +75,13 @@ export function IdleHeadroomPanel({ records }: { records: UsageRecord[] }) {
         </div>
       ) : (
         <>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-1">
             {candidates.map((c) => (
               <Link
                 key={c.meta.id}
                 to={`/platform/${c.meta.id}`}
-                className="rounded-full border px-3 py-1 text-xs font-medium tabular"
-                style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
+                className="text-xs font-medium tabular underline-offset-2 hover:underline"
+                style={{ color: "var(--text-secondary)" }}
               >
                 {c.meta.label} · {formatPercent(c.usedPercent!)} used
                 {c.msRemaining !== null && c.msRemaining >= 0 ? ` · ${formatDuration(c.msRemaining)} left` : ""}
