@@ -15,6 +15,9 @@ export interface UsageRecord {
   unit: string;
   fetched_at: string; // ISO 8601
   raw?: string | null;
+  /** Optional free-text business/project label ("which business is this session for").
+   * Cheap groundwork for cost-per-business attribution — see design/persona-fixes-changelog.md. */
+  businessTag?: string | null;
 }
 
 export type AlertSeverity = "critical" | "serious" | "warning" | "info";
@@ -36,6 +39,9 @@ export interface Alert {
   message: string;
   created_at: string; // ISO 8601
   active: boolean;
+  /** Optional business/project this alert affects, e.g. "Business X" — lets the
+   * alert feed distinguish business-critical impact from idle/untagged noise. */
+  businessTag?: string | null;
 }
 
 export type PlatformTier = "official" | "manual";
@@ -54,6 +60,9 @@ export interface PlatformMeta {
   tier: PlatformTier;
   color: "blue" | "orange" | "aqua" | "violet";
   windows: WindowMeta[];
+  /** Flat monthly subscription price in USD, if the plan is a flat-fee subscription
+   * (vs. pure pay-per-token). Illustrative mock values — see mockData.ts comment. */
+  monthlyCostUsd?: number;
 }
 
 export type Status = "good" | "watch" | "hot" | "stale";
