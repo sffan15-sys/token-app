@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+/*
+ * Theme tokens, sourced from the dataviz skill's validated reference
+ * palette (see design/ux-brainstorm.md for the design decisions).
+ * Light is the default; dark applies via prefers-color-scheme AND via
+ * an explicit [data-theme="dark"] stamp on <html> so the in-app toggle
+ * always wins over the OS setting, in either direction.
+ */
+:root {
+  color-scheme: light;
+
+  --surface-page: #f9f9f7;
+  --surface-card: #fcfcfb;
+  --surface-raised: #ffffff;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+  --gridline: #e1e0d9;
+  --border: rgba(11, 11, 11, 0.1);
+  --border-strong: #c3c2b7;
+
+  --status-good: #0ca30c;
+  --status-good-bg: #e8f6e8;
+  --status-warning: #966211;
+  --status-warning-bg: #fdf1d9;
+  --status-serious: #c4552f;
+  --status-serious-bg: #fbe7de;
+  --status-critical: #d03b3b;
+  --status-critical-bg: #fbe2e2;
+  --status-stale: #6a5cb8;
+  --status-stale-bg: #ece9fa;
+
+  --series-blue: #2a78d6;
+  --series-orange: #eb6834;
+  --series-aqua: #1baf7a;
+  --series-violet: #4a3aa7;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --surface-page: #0d0d0d;
+    --surface-card: #1a1a19;
+    --surface-raised: #202020;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --gridline: #2c2c2a;
+    --border: rgba(255, 255, 255, 0.1);
+    --border-strong: #383835;
+
+    --status-good: #0ca30c;
+    --status-good-bg: rgba(12, 163, 12, 0.14);
+    --status-warning: #eab04a;
+    --status-warning-bg: rgba(234, 176, 74, 0.14);
+    --status-serious: #ec835a;
+    --status-serious-bg: rgba(236, 131, 90, 0.14);
+    --status-critical: #e66767;
+    --status-critical-bg: rgba(230, 103, 103, 0.16);
+    --status-stale: #9085e9;
+    --status-stale-bg: rgba(144, 133, 233, 0.16);
+
+    --series-blue: #3987e5;
+    --series-orange: #d95926;
+    --series-aqua: #199e70;
+    --series-violet: #9085e9;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-page: #0d0d0d;
+  --surface-card: #1a1a19;
+  --surface-raised: #202020;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+  --gridline: #2c2c2a;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: #383835;
+
+  --status-good: #0ca30c;
+  --status-good-bg: rgba(12, 163, 12, 0.14);
+  --status-warning: #eab04a;
+  --status-warning-bg: rgba(234, 176, 74, 0.14);
+  --status-serious: #ec835a;
+  --status-serious-bg: rgba(236, 131, 90, 0.14);
+  --status-critical: #e66767;
+  --status-critical-bg: rgba(230, 103, 103, 0.16);
+  --status-stale: #9085e9;
+  --status-stale-bg: rgba(144, 133, 233, 0.16);
+
+  --series-blue: #3987e5;
+  --series-orange: #d95926;
+  --series-aqua: #199e70;
+  --series-violet: #9085e9;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--surface-page);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
