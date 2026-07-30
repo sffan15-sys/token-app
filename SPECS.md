@@ -25,6 +25,11 @@ Each entry: **Source** (what we read) · **Auth** (what credential it needs)
   - `rate_limits.five_hour.resets_at` (unix epoch seconds)
   - `rate_limits.seven_day.used_percentage` (0–100)
   - `rate_limits.seven_day.resets_at` (unix epoch seconds)
+  - The current official statusLine schema also exposes model, session,
+    context-window, client-side estimated session cost, and related runtime
+    fields, but **does not expose the account's subscription plan or tier**.
+    Therefore no Claude monthly subscription price can be derived from this
+    source.
 - **Refresh cadence:** updates after each API turn within an active Claude
   Code session. This pool is shared with claude.ai chat usage, so it
   reflects total usage, but the number only *refreshes* when Claude Code
@@ -64,15 +69,20 @@ Each entry: **Source** (what we read) · **Auth** (what credential it needs)
 ### 2a. Consumer session/weekly limits (Plus/Pro, Codex 5hr + weekly) — best-effort
 
 - **Source:** Codex CLI's own stored OAuth token, used to call the same
-  internal endpoint the CLI itself calls: `GET /api/codex/usage`. Proven
-  approach — community tool `xiangz19/codex-ratelimit` already does this.
+  internal endpoint the CLI itself calls:
+  `GET https://chatgpt.com/backend-api/wham/usage` (verified live).
 - **Auth:** Codex CLI's local credential file (same trust boundary as
   Claude's `.credentials.json` approach — reading your own CLI's own stored
   session, not a scraped browser cookie).
-- **Fields (expected, to verify against the endpoint's actual live shape
-  when we build this):** 5-hour window used %, 5-hour reset time, weekly
-  window used %, weekly reset time, pay-as-you-go credit balance if
-  applicable.
+- **Fields (verified live 2026-07-30):** top-level `plan_type`; duration-
+  labelled rate-limit windows with used %, duration, and reset time; optional
+  credit balance; additional/code-review limit objects.
+- **Cost derivation:** the collector promotes the real `plan_type` into the
+  normalized record schema. Fixed individual plans are mapped to current
+  public list prices. As of 2026-07-30, Plus is $20/month; Pro has separate
+  $100 (5x) and $200 (20x) variants, so a bare `pro` identifier is not enough
+  to choose a price. Business/Team is per-seat and also needs seat count and
+  billing cadence. Ambiguous plans remain explicitly unknown.
 - **Refresh cadence:** on demand, poll whenever we want a fresh read (unlike
   Claude's push-only-on-turn model, this looks like a pollable GET).
 - **Stability risk:** MEDIUM-HIGH. This is an internal, undocumented
@@ -118,6 +128,8 @@ Each entry: **Source** (what we read) · **Auth** (what credential it needs)
 - **Fields:** quota usage, limits, and exceeded values, retaining quota
   dimension labels in normalized `UsageRecord.metric` names. Cloud Monitoring
   `INT64`, `DOUBLE`, and `BOOL` values normalize to the shared numeric schema.
+  These quota TimeSeries contain no consumer subscription or billing-plan
+  field, so they cannot supply a Gemini monthly subscription cost.
 - **Implementation:** `collectors/gemini/collect.ts`; runnable with
   `npm run collect:gemini` and included in the local scheduler.
 - **Verification state:** endpoint/filter/auth/response shapes are verified
@@ -142,6 +154,9 @@ Each entry: **Source** (what we read) · **Auth** (what credential it needs)
   streamed as JSONL. Standard `X-RateLimit-Limit/-Remaining/-Reset` headers
   on all API calls for API-call-rate awareness (distinct from
   billing/usage).
+- **Cost derivation:** sum the returned FOCUS `BilledCost` values for the
+  current month into `billing_period_cost`. This is the real net billing data;
+  do not add a static Vercel seat-price guess on top.
 - **Refresh cadence:** on-demand query, any date range within a year.
 - **Stability risk:** LOW, documented, versioned.
 

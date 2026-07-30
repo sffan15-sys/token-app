@@ -2,7 +2,7 @@
  * Mock data layer.
  *
  * `PLATFORMS` below is real, static UI metadata (labels/colors/window
- * shapes/illustrative monthly cost) — it is NOT mock telemetry and is
+ * shapes) — it is NOT mock telemetry and is
  * still imported by the running app (components, Settings, etc).
  *
  * `MOCK_USAGE_RECORDS` / `MOCK_ALERTS` ARE mock telemetry. As of the
@@ -21,13 +21,6 @@ import type { Alert, PlatformMeta, UsageRecord } from "../types";
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
-/**
- * monthlyCostUsd is the flat subscription list price per platform. These are
- * illustrative mock values as of 2026 (Claude Max, ChatGPT Pro, Cursor Pro+,
- * Gemini Advanced, Vercel Pro) — the owner should correct these against their
- * actual billed plan/tier, since real prices and tiers change and the owner's
- * plan tier isn't otherwise known to this app.
- */
 export const PLATFORMS: PlatformMeta[] = [
   {
     id: "claude",
@@ -35,7 +28,6 @@ export const PLATFORMS: PlatformMeta[] = [
     tier: "official",
     dataMode: "window",
     color: "orange",
-    monthlyCostUsd: 100, // Claude Max (illustrative — confirm actual tier)
     windows: [
       { key: "five_hour", label: "5-hour", durationMs: 5 * HOUR },
       { key: "seven_day", label: "7-day", durationMs: 7 * DAY },
@@ -47,7 +39,6 @@ export const PLATFORMS: PlatformMeta[] = [
     tier: "official",
     dataMode: "window",
     color: "aqua",
-    monthlyCostUsd: 200, // ChatGPT Pro (illustrative — confirm actual tier)
     windows: [
       { key: "five_hour", label: "5-hour", durationMs: 5 * HOUR },
       { key: "weekly", label: "Weekly", durationMs: 7 * DAY },
@@ -59,7 +50,6 @@ export const PLATFORMS: PlatformMeta[] = [
     tier: "official",
     dataMode: "quota",
     color: "blue",
-    monthlyCostUsd: 20, // Gemini Advanced / Google One AI Premium (illustrative)
     windows: [],
     connectionNote: "API quota data via Google Cloud Monitoring",
   },
@@ -69,7 +59,6 @@ export const PLATFORMS: PlatformMeta[] = [
     tier: "official",
     dataMode: "pool",
     color: "violet",
-    monthlyCostUsd: 20, // Vercel Pro base seat (illustrative — metered usage on top, see billing_period_cost)
     windows: [{ key: "billing_period", label: "Billing period", durationMs: 30 * DAY }],
   },
   {
@@ -78,7 +67,6 @@ export const PLATFORMS: PlatformMeta[] = [
     tier: "unavailable",
     dataMode: "unavailable",
     color: "aqua",
-    monthlyCostUsd: 60, // Cursor Pro+ (illustrative — confirm actual tier)
     windows: [],
     connectionNote: "Not connected — no API available on individual plans",
   },
@@ -175,6 +163,9 @@ const records: UsageRecord[] = [];
   records.push(
     ...genRollingWindow("codex", "weekly_used_percentage", weekStart, 7 * DAY, 2, 34, rng, 10)
   );
+  for (const record of records) {
+    if (record.platform === "codex") record.plan_type = "plus";
+  }
 }
 
 // --- Vercel: official, billing period, usage in $ vs plan + request count metric ---

@@ -14,6 +14,8 @@ export interface UsageRecord {
   value: number;
   unit: string;
   fetched_at: string; // ISO 8601
+  /** Source-reported subscription plan identifier, when a collector exposes one. */
+  plan_type?: string | null;
   raw?: string | null;
   /** Optional free-text business/project label ("which business is this session for").
    * Cheap groundwork for cost-per-business attribution — see design/persona-fixes-changelog.md. */
@@ -65,9 +67,6 @@ export interface PlatformMeta {
   windows: WindowMeta[];
   /** Plain-language integration state for sources that need special context. */
   connectionNote?: string;
-  /** Flat monthly subscription price in USD, if the plan is a flat-fee subscription
-   * (vs. pure pay-per-token). Illustrative mock values — see mockData.ts comment. */
-  monthlyCostUsd?: number;
 }
 
 export type Status = "good" | "watch" | "hot" | "stale";

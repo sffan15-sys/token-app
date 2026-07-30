@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { UsageBar } from "./UsageBar";
 import { StatusPill } from "./StatusPill";
+import { derivePlatformCost, formatCostForTable } from "../lib/costs";
 import { formatDuration, formatRelativeTime } from "../lib/format";
 import { isPoolPlatform, poolSnapshot, snapshotForWindow } from "../lib/selectors";
 import { statusForUsage, worstStatus } from "../lib/status";
@@ -21,11 +22,14 @@ interface Row {
   resetText: string;
   lastLoggedText: string | null;
   platformNote: string | null;
-  monthlyCostUsd: number | null;
+  monthlyCostText: string;
 }
 
 function buildRow(meta: PlatformMeta, records: UsageRecord[]): Row {
   const cadence = meta.tier === "manual" ? "slow" : "live";
+  const monthlyCostText = formatCostForTable(
+    derivePlatformCost(meta, records)
+  );
 
   if (meta.dataMode === "unavailable") {
     return {
@@ -43,7 +47,7 @@ function buildRow(meta: PlatformMeta, records: UsageRecord[]): Row {
       resetText: "—",
       lastLoggedText: null,
       platformNote: meta.connectionNote ?? null,
-      monthlyCostUsd: meta.monthlyCostUsd ?? null,
+      monthlyCostText,
     };
   }
 
@@ -73,7 +77,7 @@ function buildRow(meta: PlatformMeta, records: UsageRecord[]): Row {
       resetText: latest ? formatRelativeTime(latest.fetched_at) : "—",
       lastLoggedText: null,
       platformNote: meta.connectionNote ?? null,
-      monthlyCostUsd: meta.monthlyCostUsd ?? null,
+      monthlyCostText,
     };
   }
 
@@ -95,7 +99,7 @@ function buildRow(meta: PlatformMeta, records: UsageRecord[]): Row {
       resetText: "—",
       lastLoggedText: snap.latest ? formatRelativeTime(snap.latest.fetched_at) : "no data",
       platformNote: null,
-      monthlyCostUsd: meta.monthlyCostUsd ?? null,
+      monthlyCostText,
     };
   }
 
@@ -139,7 +143,7 @@ function buildRow(meta: PlatformMeta, records: UsageRecord[]): Row {
     resetText,
     lastLoggedText: meta.tier === "manual" ? (primarySnap.lastFetchedAt ? formatRelativeTime(primarySnap.lastFetchedAt) : "not logged") : null,
     platformNote: null,
-    monthlyCostUsd: meta.monthlyCostUsd ?? null,
+    monthlyCostText,
   };
 }
 
@@ -230,7 +234,7 @@ export function PlatformTable({ platforms, records }: { platforms: PlatformMeta[
                 {row.resetText}
               </td>
               <td className="whitespace-nowrap px-4 py-3 tabular text-xs" style={{ color: "var(--text-secondary)" }}>
-                {row.monthlyCostUsd !== null ? `$${row.monthlyCostUsd}/mo` : "—"}
+                {row.monthlyCostText}
               </td>
             </tr>
           ))}

@@ -1,57 +1,97 @@
 import { PLATFORMS } from "../data/mockData";
-import { isPoolPlatform, poolSnapshot } from "../lib/selectors";
+import { deriveCostSummary } from "../lib/costs";
 import type { UsageRecord } from "../types";
 
 /**
- * "Flat subscriptions + metered spend so far this period" rollup.
- * Closes the owner's own named gap (design/critique-claude.md 2.1,
- * research/codex-critique.md #2): the app had gauges for allowance
- * consumption but no dollar figure for what the whole stack actually costs.
+ * Known-cost rollup only. Every included dollar comes from either a
+ * source-reported subscription plan with one unambiguous public list price,
+ * or real billing charges collected from the provider. Unknown platforms are
+ * shown explicitly and never silently treated as $0.
  */
 export function CostSummary({ records }: { records: UsageRecord[] }) {
-  const flatTotal = PLATFORMS.reduce((sum, p) => sum + (p.monthlyCostUsd ?? 0), 0);
-  const meteredTotal = PLATFORMS.reduce((sum, p) => {
-    if (!isPoolPlatform(p)) return sum;
-    const snap = poolSnapshot(records, p.id);
-    return sum + (snap.latest?.value ?? 0);
-  }, 0);
-  const total = flatTotal + meteredTotal;
+  const summary = deriveCostSummary(PLATFORMS, records);
 
   return (
     <div className="border-t pt-3" style={{ borderColor: "var(--border)" }}>
-      <div className="text-sm font-semibold mb-1" style={{ color: "var(--text-primary)" }}>
-        This month's AI spend
+      <div
+        className="text-sm font-semibold mb-1"
+        style={{ color: "var(--text-primary)" }}
+      >
+        This month's known spend
       </div>
       <div className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
-        Flat subscriptions + metered usage billed so far this period, across all platforms.
+        Automatically detected subscriptions plus real billed charges. Unknown
+        costs are excluded.
       </div>
       <div className="flex items-end gap-2 mb-3">
-        <div className="text-3xl font-semibold tabular" style={{ color: "var(--text-primary)" }}>
-          ${total.toFixed(2)}
+        <div
+          className="text-3xl font-semibold tabular"
+          style={{ color: "var(--text-primary)" }}
+        >
+          ${summary.knownTotal.toFixed(2)}
         </div>
         <div className="text-xs mb-1" style={{ color: "var(--text-muted)" }}>
-          / mo (est.)
+          known so far
         </div>
       </div>
-      <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs mb-3" style={{ color: "var(--text-secondary)" }}>
+      <div
+        className="flex flex-wrap gap-x-6 gap-y-1 text-xs mb-3"
+        style={{ color: "var(--text-secondary)" }}
+      >
         <span>
-          <span style={{ color: "var(--text-muted)" }}>Flat subscriptions:</span>{" "}
-          <span className="tabular">${flatTotal.toFixed(2)}</span>
+          <span style={{ color: "var(--text-muted)" }}>
+            Detected subscriptions:
+          </span>{" "}
+          <span className="tabular">
+            ${summary.subscriptionTotal.toFixed(2)}
+          </span>
         </span>
         <span>
-          <span style={{ color: "var(--text-muted)" }}>Metered so far:</span>{" "}
-          <span className="tabular">${meteredTotal.toFixed(2)}</span>
+          <span style={{ color: "var(--text-muted)" }}>Billed charges:</span>{" "}
+          <span className="tabular">${summary.billedTotal.toFixed(2)}</span>
         </span>
       </div>
-      <div className="flex flex-col gap-1 border-t pt-2" style={{ borderColor: "var(--border)" }}>
-        {PLATFORMS.map((p) => {
-          const metered = isPoolPlatform(p) ? poolSnapshot(records, p.id).latest?.value ?? null : null;
+      {summary.unknown.length > 0 && (
+        <div className="mb-3 text-xs" style={{ color: "var(--text-muted)" }}>
+          Excludes {summary.unknown.length} platform
+          {summary.unknown.length === 1 ? "" : "s"} with no automatically
+          verifiable cost.
+        </div>
+      )}
+      <div
+        className="flex flex-col gap-2 border-t pt-2"
+        style={{ borderColor: "var(--border)" }}
+      >
+        {PLATFORMS.map((platform) => {
+          const cost = summary.costs.find(
+            (entry) => entry.platformId === platform.id
+          )!;
+          const value =
+            cost.amountUsd !== null
+              ? cost.kind === "subscription"
+                ? `$${cost.amountUsd.toFixed(2)}/mo`
+                : `$${cost.amountUsd.toFixed(2)} billed`
+              : cost.status === "not_connected"
+                ? "Not connected"
+                : "Cost unknown";
+          const showLabel =
+            cost.label !== "Cost unknown" && cost.label !== "Not connected";
+
           return (
-            <div key={p.id} className="flex items-center justify-between text-xs">
-              <span style={{ color: "var(--text-secondary)" }}>{p.label}</span>
-              <span className="tabular" style={{ color: "var(--text-muted)" }}>
-                {p.monthlyCostUsd ? `$${p.monthlyCostUsd.toFixed(0)}/mo` : "usage-based"}
-                {metered !== null ? ` + $${metered.toFixed(2)} used` : ""}
+            <div
+              key={platform.id}
+              className="flex items-start justify-between gap-4 text-xs"
+            >
+              <span style={{ color: "var(--text-secondary)" }}>
+                {platform.label}
+              </span>
+              <span
+                className="max-w-[70%] text-right"
+                style={{ color: "var(--text-muted)" }}
+              >
+                <span className="tabular">{value}</span>
+                {showLabel ? ` · ${cost.label}` : ""}
+                <span className="block">{cost.detail}</span>
               </span>
             </div>
           );

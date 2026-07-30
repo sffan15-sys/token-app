@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
 import { PLATFORMS } from "../data/mockData";
+import { derivePlatformCost } from "../lib/costs";
 import { isPoolPlatform, poolSnapshot, snapshotForWindow } from "../lib/selectors";
 import { formatDuration, formatPercent } from "../lib/format";
-import type { PlatformMeta, UsageRecord } from "../types";
+import type { UsageRecord } from "../types";
 
 /**
  * AI capacity destinations only — Vercel is infra/hosting, not an
@@ -19,11 +20,11 @@ const MIN_SAFE_TIME_REMAINING_MS = 20 * 60 * 1000;
 
 /** Rough $/remaining-capacity-point: lower is cheaper to burn. Flat-subscription
  * platforms only — usage-based cost isn't meaningfully comparable the same way. */
-function costPerRemainingPoint(meta: PlatformMeta, usedPercent: number): number | null {
-  if (!meta.monthlyCostUsd) return null;
+function costPerRemainingPoint(monthlyCostUsd: number | null, usedPercent: number): number | null {
+  if (monthlyCostUsd === null) return null;
   const remainingPercent = 100 - usedPercent;
   if (remainingPercent <= 0) return null;
-  return meta.monthlyCostUsd / remainingPercent;
+  return monthlyCostUsd / remainingPercent;
 }
 
 /**
@@ -40,13 +41,15 @@ function costPerRemainingPoint(meta: PlatformMeta, usedPercent: number): number 
 export function IdleHeadroomPanel({ records }: { records: UsageRecord[] }) {
   const candidates = PLATFORMS.filter((meta) => AI_TASK_PLATFORM_IDS.has(meta.id))
     .map((meta) => {
+      const cost = derivePlatformCost(meta, records);
+      const monthlyCostUsd = cost.kind === "subscription" ? cost.amountUsd : null;
       if (isPoolPlatform(meta)) {
         const snap = poolSnapshot(records, meta.id);
-        return { meta, usedPercent: snap.usedPercent, msRemaining: null as number | null };
+        return { meta, usedPercent: snap.usedPercent, msRemaining: null as number | null, monthlyCostUsd };
       }
       const snap = snapshotForWindow(records, meta.id, meta.windows[0]);
       const msRemaining = snap.resetAt ? new Date(snap.resetAt).getTime() - Date.now() : null;
-      return { meta, usedPercent: snap.usedPercent, msRemaining };
+      return { meta, usedPercent: snap.usedPercent, msRemaining, monthlyCostUsd };
     })
     .filter((c) => {
       if (c.usedPercent === null || c.usedPercent >= HEADROOM_THRESHOLD) return false;
@@ -57,7 +60,13 @@ export function IdleHeadroomPanel({ records }: { records: UsageRecord[] }) {
     });
 
   const cheapest = candidates
-    .map((c) => ({ ...c, costPerPoint: c.usedPercent !== null ? costPerRemainingPoint(c.meta, c.usedPercent) : null }))
+    .map((c) => ({
+      ...c,
+      costPerPoint:
+        c.usedPercent !== null
+          ? costPerRemainingPoint(c.monthlyCostUsd, c.usedPercent)
+          : null,
+    }))
     .filter((c) => c.costPerPoint !== null)
     .sort((a, b) => a.costPerPoint! - b.costPerPoint!)[0];
 

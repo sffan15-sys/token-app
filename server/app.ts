@@ -21,6 +21,7 @@ interface UsageRow {
   value: number;
   unit: string;
   fetched_at: string;
+  plan_type: string | null;
   raw: string | null;
 }
 
@@ -52,6 +53,7 @@ function rowToUsageRecord(row: UsageRow): UsageRecord & { businessTag?: string |
     value: row.value,
     unit: row.unit,
     fetched_at: row.fetched_at,
+    plan_type: row.plan_type,
     raw: row.raw,
     ...(businessTag !== undefined ? { businessTag } : {}),
   };
@@ -146,10 +148,18 @@ export function createApp() {
       value,
       unit,
       fetched_at: fetchedAt,
+      plan_type: null,
       raw: JSON.stringify({ source: "manual", ...(businessTag ? { businessTag } : {}) }),
     };
     insertUsageRecords([record]);
-    res.status(201).json({ record: rowToUsageRecord({ ...record, id: 0, raw: record.raw ?? null }) });
+    res.status(201).json({
+      record: rowToUsageRecord({
+        ...record,
+        id: 0,
+        plan_type: record.plan_type ?? null,
+        raw: record.raw ?? null,
+      }),
+    });
   });
 
   // GET /api/config — which keys are currently set (booleans only — never returns values).

@@ -138,7 +138,8 @@ function windowToRecords(
   label: string,
   w: RateLimitWindow,
   fetchedAt: string,
-  raw: string
+  raw: string,
+  planType: string | null
 ): UsageRecord[] {
   const windowEnd = new Date(w.reset_at * 1000).toISOString();
   const windowStart = new Date(w.reset_at * 1000 - w.limit_window_seconds * 1000).toISOString();
@@ -151,9 +152,16 @@ function windowToRecords(
       value: w.used_percent,
       unit: "percent",
       fetched_at: fetchedAt,
+      plan_type: planType,
       raw,
     },
   ];
+}
+
+function normalizePlanType(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  return normalized || null;
 }
 
 export async function collectCodexUsage(): Promise<{ recordsWritten: number }> {
@@ -211,6 +219,36 @@ export async function collectCodexUsage(): Promise<{ recordsWritten: number }> {
     throw new Error("Codex wham/usage response was not valid JSON.");
   }
 
+  const planType = normalizePlanType(data.plan_type);
+  if (!planType) {
+    insertCollectorError({
+      platform: PLATFORM,
+      occurred_at: fetchedAt,
+      kind: "missing_plan_type",
+      message:
+        "Codex wham/usage response did not include a usable top-level plan_type. " +
+        "Usage limits can still be stored, but subscription cost cannot be derived automatically.",
+    });
+  }
+
+  const allRecords: UsageRecord[] = [];
+  if (planType) {
+    // A stable metric makes the latest plan discoverable even when a response
+    // temporarily has no active rate-limit windows. The numeric value is only
+    // an observation marker; plan_type carries the source-reported value.
+    allRecords.push({
+      platform: PLATFORM,
+      window_start: fetchedAt,
+      window_end: fetchedAt,
+      metric: "subscription_plan",
+      value: 1,
+      unit: "plan",
+      fetched_at: fetchedAt,
+      plan_type: planType,
+      raw: JSON.stringify({ plan_type: planType, source: "wham/usage" }),
+    });
+  }
+
   if (!data.rate_limit || (data.rate_limit.primary_window == null && data.rate_limit.secondary_window == null)) {
     insertCollectorError({
       platform: PLATFORM,
@@ -222,14 +260,13 @@ export async function collectCodexUsage(): Promise<{ recordsWritten: number }> {
         "for the last verified shape.",
       raw: bodyText.slice(0, 2000),
     });
-    return { recordsWritten: 0 };
+    return { recordsWritten: insertUsageRecords(allRecords) };
   }
 
-  const allRecords: UsageRecord[] = [];
   const raw = JSON.stringify(data);
   for (const w of [data.rate_limit.primary_window, data.rate_limit.secondary_window]) {
     if (!w) continue;
-    allRecords.push(...windowToRecords(windowLabel(w), w, fetchedAt, raw));
+    allRecords.push(...windowToRecords(windowLabel(w), w, fetchedAt, raw, planType));
   }
 
   if (data.credits && data.credits.has_credits && data.credits.balance != null) {
@@ -243,6 +280,7 @@ export async function collectCodexUsage(): Promise<{ recordsWritten: number }> {
         value: balance,
         unit: "usd",
         fetched_at: fetchedAt,
+        plan_type: planType,
         raw,
       });
     }

@@ -11,7 +11,7 @@ per-platform data source research.
 - **Shared storage layer** (`storage/db.ts`): a local SQLite file at
   `data/token-app.db` (gitignored) with two tables:
   - `usage_records`: the common normalized schema
-    `{platform, window_start, window_end, metric, value, unit, fetched_at, raw}`
+    `{platform, window_start, window_end, metric, value, unit, fetched_at, plan_type?, raw}`
     that every collector writes into.
   - `collector_errors`: defensive log of validation failures / hard errors
     (missing token, unexpected payload shape, HTTP errors) so problems are
@@ -21,7 +21,10 @@ per-platform data source research.
 - **Vercel collector** (`collectors/vercel/collect.ts`): calls
   `GET /v1/billing/charges` (FOCUS v1.3 JSONL), parses each charge line,
   and writes `cost.<service>.billed`, `cost.<service>.effective`, and
-  (when present) `usage.<service>` records. Reads the token from
+  (when present) `usage.<service>` records. It also sums the real net
+  `BilledCost` values for the current month into `billing_period_cost`;
+  this includes whatever base seats, usage, credits, adjustments, and taxes
+  Vercel actually returns, with no guessed flat plan fee. Reads the token from
   `VERCEL_TOKEN` (never hardcoded). Handles:
   - missing token -> clear error, no crash
   - HTTP 403 (Hobby-plan / insufficient-role case flagged in SPECS.md) ->
@@ -184,6 +187,19 @@ actually reads from it, instead of `frontend/src/data/mockData.ts`.
   by the running app. Gemini and Cursor have no fake records: Gemini renders
   real quota rows or "No data yet", while Cursor reads "Not connected — no
   API available on individual plans."
+
+### Automatic cost derivation
+
+`frontend/src/lib/costs.ts` removes all illustrative static prices from
+`PLATFORMS`. ChatGPT/Codex uses the real top-level `plan_type` captured by
+the live collector and maps only unambiguous fixed-price plans; the currently
+captured `plus` account resolves to $20/month. Vercel uses the real
+`billing_period_cost` aggregate.
+
+Claude and Gemini are explicitly "Cost unknown" because their collector
+payloads expose no subscription plan/billing tier, and Cursor is "Not
+connected." Unknown costs are listed and excluded from the displayed total,
+never silently counted as zero.
 
 ### Running this end-to-end
 

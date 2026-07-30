@@ -49,6 +49,12 @@ export interface UsageRecord {
   unit: string;
   /** ISO 8601 timestamp of when the collector fetched/wrote this record. */
   fetched_at: string;
+  /** Optional source-reported subscription plan identifier.
+   *
+   * This is deliberately source data, not a user-entered guess. It is
+   * currently populated by the Codex collector from wham/usage.plan_type.
+   */
+  plan_type?: string | null;
   /** Optional raw source payload (JSON string) for debugging/audit. */
   raw?: string | null;
 }
@@ -81,6 +87,7 @@ export function getDb(): DatabaseSync {
       value REAL NOT NULL,
       unit TEXT NOT NULL,
       fetched_at TEXT NOT NULL,
+      plan_type TEXT,
       raw TEXT,
       UNIQUE(platform, metric, window_start, window_end) ON CONFLICT REPLACE
     );
@@ -98,6 +105,28 @@ export function getDb(): DatabaseSync {
     CREATE INDEX IF NOT EXISTS idx_collector_errors_platform_time
       ON collector_errors(platform, occurred_at);
   `);
+
+  // Additive migration for databases created before source-reported plan
+  // metadata was promoted out of the raw JSON blob.
+  const planTypeColumn = db
+    .prepare("SELECT name FROM pragma_table_info('usage_records') WHERE name = 'plan_type'")
+    .get();
+  if (!planTypeColumn) {
+    db.exec("ALTER TABLE usage_records ADD COLUMN plan_type TEXT;");
+  }
+
+  // Existing Codex rows already retained the real wham response in `raw`.
+  // Backfill them once so the UI can derive the current plan price without
+  // waiting for the next successful collector poll.
+  db.exec(`
+    UPDATE usage_records
+    SET plan_type = lower(json_extract(raw, '$.plan_type'))
+    WHERE platform = 'codex'
+      AND plan_type IS NULL
+      AND raw IS NOT NULL
+      AND json_valid(raw)
+      AND typeof(json_extract(raw, '$.plan_type')) = 'text';
+  `);
   return db;
 }
 
@@ -106,9 +135,9 @@ export function insertUsageRecords(records: UsageRecord[]): number {
   const database = getDb();
   const stmt = database.prepare(`
     INSERT INTO usage_records
-      (platform, window_start, window_end, metric, value, unit, fetched_at, raw)
+      (platform, window_start, window_end, metric, value, unit, fetched_at, plan_type, raw)
     VALUES
-      (?, ?, ?, ?, ?, ?, ?, ?)
+      (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   database.exec("BEGIN");
   try {
@@ -121,6 +150,7 @@ export function insertUsageRecords(records: UsageRecord[]): number {
         r.value,
         r.unit,
         r.fetched_at,
+        r.plan_type ?? null,
         r.raw ?? null
       );
     }

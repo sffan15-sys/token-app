@@ -2,7 +2,11 @@
  * Vercel usage/billing collector.
  *
  * Hits GET /v1/billing/charges (FOCUS v1.3 JSONL format) and normalizes
- * each charge line into the shared UsageRecord schema.
+ * each charge line into the shared UsageRecord schema. It also writes one
+ * `billing_period_cost` record containing the real net sum of BilledCost
+ * across the current calendar month. That aggregate is what the frontend
+ * uses; it includes base seats, usage, credits, adjustments, and taxes
+ * exactly when those categories are present in the returned charge data.
  *
  * Docs verified live against vercel.com/docs/rest-api/billing/list-focus-billing-charges
  * on 2026-07-30:
@@ -18,10 +22,8 @@
  *     object per line, each with FOCUS v1.3 fields (BilledCost,
  *     ChargePeriodStart/End, ServiceName, ConsumedQuantity/Unit, etc).
  *
- * NOTE: this has been written against the documented shape only. I do not
- * have a live VERCEL_TOKEN to test against a real Pro/Enterprise team, so
- * the JSONL parsing and normalization logic is unverified against real
- * response bytes. See README.md "Unverified" section.
+ * The aggregate never adds a guessed Vercel seat price. BilledCost is the
+ * invoiced amount supplied by Vercel's billing API.
  */
 
 import { insertCollectorError, insertUsageRecords, type UsageRecord } from "../../storage/db.js";
@@ -73,10 +75,11 @@ class VercelPlanMismatchError extends Error {
   }
 }
 
-function isoDaysAgo(days: number): string {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() - days);
-  return d.toISOString();
+function currentUtcMonth(): { start: string; end: string } {
+  const now = new Date();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  return { start: start.toISOString(), end: end.toISOString() };
 }
 
 /** Defensively parse one JSONL line into a FocusCharge, or return null if malformed. */
@@ -87,6 +90,8 @@ function parseChargeLine(line: string): FocusCharge | null {
     const obj = JSON.parse(trimmed);
     if (
       typeof obj.BilledCost !== "number" ||
+      typeof obj.BillingCurrency !== "string" ||
+      typeof obj.ChargeCategory !== "string" ||
       typeof obj.ChargePeriodStart !== "string" ||
       typeof obj.ChargePeriodEnd !== "string" ||
       typeof obj.ServiceName !== "string"
@@ -152,8 +157,10 @@ export async function collectVercelUsage(opts: CollectVercelOptions = {}): Promi
     throw new Error(message);
   }
 
-  const from = opts.from ?? isoDaysAgo(7);
+  const defaultMonth = currentUtcMonth();
+  const from = opts.from ?? defaultMonth.start;
   const to = opts.to ?? new Date().toISOString();
+  const aggregateWindowEnd = opts.to ?? defaultMonth.end;
 
   const url = new URL("/v1/billing/charges", VERCEL_API_BASE);
   url.searchParams.set("from", from);
@@ -218,6 +225,7 @@ export async function collectVercelUsage(opts: CollectVercelOptions = {}): Promi
   const lines = bodyText.split("\n");
 
   const allRecords: UsageRecord[] = [];
+  const charges: FocusCharge[] = [];
   let chargesSeen = 0;
   let malformedLines = 0;
 
@@ -229,6 +237,7 @@ export async function collectVercelUsage(opts: CollectVercelOptions = {}): Promi
       continue;
     }
     chargesSeen++;
+    charges.push(charge);
     allRecords.push(...chargeToUsageRecords(charge, fetchedAt));
   }
 
@@ -238,6 +247,48 @@ export async function collectVercelUsage(opts: CollectVercelOptions = {}): Promi
       occurred_at: fetchedAt,
       kind: "malformed_jsonl_lines",
       message: `${malformedLines} of ${lines.length} JSONL line(s) from Vercel billing/charges did not match the expected FOCUS shape and were skipped.`,
+    });
+  }
+
+  const billedByCurrency = new Map<string, number>();
+  const billedByCategory: Record<string, number> = {};
+  for (const charge of charges) {
+    const currency = charge.BillingCurrency.toUpperCase();
+    billedByCurrency.set(currency, (billedByCurrency.get(currency) ?? 0) + charge.BilledCost);
+    billedByCategory[charge.ChargeCategory] =
+      (billedByCategory[charge.ChargeCategory] ?? 0) + charge.BilledCost;
+  }
+
+  if (billedByCurrency.size <= 1) {
+    const [currency = "USD", unroundedTotal = 0] =
+      billedByCurrency.entries().next().value ?? [];
+    const total = Math.round((unroundedTotal + Number.EPSILON) * 100) / 100;
+    allRecords.push({
+      platform: PLATFORM,
+      window_start: from,
+      window_end: aggregateWindowEnd,
+      metric: "billing_period_cost",
+      value: total,
+      unit: currency.toLowerCase(),
+      fetched_at: fetchedAt,
+      raw: JSON.stringify({
+        source: "vercel_focus_v1.3",
+        query_from: from,
+        query_to: to,
+        charge_count: chargesSeen,
+        billing_currency: currency,
+        billed_by_category: billedByCategory,
+      }),
+    });
+  } else {
+    insertCollectorError({
+      platform: PLATFORM,
+      occurred_at: fetchedAt,
+      kind: "mixed_billing_currencies",
+      message:
+        "Vercel returned billing charges in multiple currencies for one period. " +
+        "Per-charge records were stored, but no single USD total was fabricated.",
+      raw: JSON.stringify({ currencies: [...billedByCurrency.keys()] }),
     });
   }
 
