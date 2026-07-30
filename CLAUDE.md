@@ -169,10 +169,26 @@ training knowledge). Rough shape anticipated:
 1. Verify current (2026) API/scraping reality for each platform against
    this table before writing integration code — this document is a
    starting hypothesis, not verified fact, and platform APIs change.
+   **Done** — see SPECS.md, and the Vercel `/v1/billing/charges` shape was
+   re-confirmed live against vercel.com/docs on 2026-07-30.
 2. Stand up the Vercel integration first (least friction, official API,
-   proves the pipeline end-to-end).
+   proves the pipeline end-to-end). **Built** —
+   `collectors/vercel/collect.ts` + shared SQLite storage layer
+   (`storage/db.ts`). Not yet run against a real `VERCEL_TOKEN`/live team;
+   see README.md "What's NOT yet verified".
+2a. Also built the Claude Code statusline collector
+   (`collectors/claude/statusline.ts`) ahead of schedule since it's the
+   other high-confidence source. Not yet wired into
+   `~/.claude/settings.json` or tested against a real Claude Code session
+   payload — see README.md.
 3. Add manual-log capture for Claude/ChatGPT/Gemini session %, to start
    collecting baseline data immediately while proper integrations are
-   evaluated.
+   evaluated. **Not started.**
 4. Build the baseline/anomaly + alert logic against whatever real data
-   exists, iterate from there.
+   exists, iterate from there. **Not started** — blocked on getting at
+   least one collector verified against live data.
+
+See README.md in the project root for full detail on what's built, what's
+unverified, and the one deviation from spec (storage driver: `node:sqlite`
+instead of `better-sqlite3`, due to no Python/node-gyp toolchain on this
+machine — same schema, see README for rationale).
