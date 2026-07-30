@@ -1,7 +1,7 @@
 import { AlertStrip } from "../components/AlertStrip";
 import { CostSummary } from "../components/CostSummary";
 import { IdleHeadroomPanel } from "../components/IdleHeadroomPanel";
-import { PlatformCard } from "../components/PlatformCard";
+import { PlatformTable } from "../components/PlatformTable";
 import { MOCK_ALERTS, MOCK_USAGE_RECORDS, PLATFORMS } from "../data/mockData";
 
 /**
@@ -31,11 +31,7 @@ export function Home() {
         <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
           Usage right now
         </h2>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {PLATFORMS.map((meta) => (
-            <PlatformCard key={meta.id} meta={meta} records={MOCK_USAGE_RECORDS} />
-          ))}
-        </div>
+        <PlatformTable platforms={PLATFORMS} records={MOCK_USAGE_RECORDS} />
         <IdleHeadroomPanel records={MOCK_USAGE_RECORDS} />
       </section>
     </div>
