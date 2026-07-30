@@ -1,25 +1,18 @@
-import { AlertStrip } from "../components/AlertStrip";
 import { CostSummary } from "../components/CostSummary";
 import { IdleHeadroomPanel } from "../components/IdleHeadroomPanel";
 import { PlatformTable } from "../components/PlatformTable";
-import { MOCK_ALERTS, MOCK_USAGE_RECORDS, PLATFORMS } from "../data/mockData";
+import { MOCK_USAGE_RECORDS, PLATFORMS } from "../data/mockData";
 
 /**
- * Three clearly labeled, visually distinct zones: alerts, then current
- * usage (the bars/table), then cost last — current status matters more
- * than the monthly total at a glance. See
- * design/persona-fixes-changelog.md for why this restructure happened.
+ * Usage first, cost second. Alerts have their own nav tab (Alerts.tsx) and
+ * are intentionally NOT duplicated here — the owner found the alert list
+ * on Home too heavy/card-like and wanted the table to be the very first
+ * thing on the page. See design/persona-fixes-changelog.md for prior
+ * history on this page's layout.
  */
 export function Home() {
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-8 p-4 sm:p-6">
-      <section className="flex flex-col gap-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
-          Status snapshot
-        </h2>
-        <AlertStrip alerts={MOCK_ALERTS} />
-      </section>
-
       <section className="flex flex-col gap-3">
         <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
           Usage right now
