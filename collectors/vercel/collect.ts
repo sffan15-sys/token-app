@@ -25,6 +25,7 @@
  */
 
 import { insertCollectorError, insertUsageRecords, type UsageRecord } from "../../storage/db.js";
+import { applyConfigToEnv } from "../../server/config.js";
 
 const VERCEL_API_BASE = "https://api.vercel.com";
 const PLATFORM = "vercel";
@@ -247,6 +248,9 @@ export async function collectVercelUsage(opts: CollectVercelOptions = {}): Promi
 // Allow running directly: `npm run collect:vercel` or `tsx collectors/vercel/collect.ts`
 const isMain = process.argv[1]?.replace(/\\/g, "/").endsWith("collectors/vercel/collect.ts");
 if (isMain) {
+  // Picks up keys saved via the Settings UI / POST /api/config (data/local-config.json) so the
+  // owner doesn't have to `export VERCEL_TOKEN=...` by hand before running this directly.
+  applyConfigToEnv();
   collectVercelUsage({ teamId: process.env.VERCEL_TEAM_ID })
     .then((result) => {
       console.log(`Vercel collector: wrote ${result.recordsWritten} records from ${result.chargesSeen} charges.`);

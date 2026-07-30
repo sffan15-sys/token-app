@@ -10,13 +10,22 @@
     "collect:codex": "tsx collectors/codex/collect.ts",
     "collect:openai": "tsx collectors/openai/collect.ts",
     "statusline:claude": "tsx collectors/claude/statusline.ts",
+    "server": "tsx server/index.ts",
+    "server:no-scheduler": "cross-env NO_SCHEDULER=1 tsx server/index.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "engines": {
     "node": ">=22.5.0"
   },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2"
+  },
   "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
     "@types/node": "^22.10.2",
+    "cross-env": "^7.0.3",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }

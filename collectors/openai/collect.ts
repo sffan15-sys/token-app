@@ -33,6 +33,7 @@
  */
 
 import { insertCollectorError, insertUsageRecords, type UsageRecord } from "../../storage/db.js";
+import { applyConfigToEnv } from "../../server/config.js";
 
 const PLATFORM = "openai";
 const API_BASE = "https://api.openai.com";
@@ -295,6 +296,7 @@ export async function collectOpenAiUsage(): Promise<{ recordsWritten: number }> 
 
 // Allow running directly: `npm run collect:openai` or `tsx collectors/openai/collect.ts`
 if (process.argv[1]?.endsWith("collect.ts")) {
+  applyConfigToEnv();
   collectOpenAiUsage()
     .then((result) => {
       console.log(`OpenAI collector: wrote ${result.recordsWritten} records.`);

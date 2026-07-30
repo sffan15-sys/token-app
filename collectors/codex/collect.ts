@@ -56,6 +56,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { insertCollectorError, insertUsageRecords, type UsageRecord } from "../../storage/db.js";
+import { applyConfigToEnv } from "../../server/config.js";
 
 const PLATFORM = "codex";
 const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
@@ -253,6 +254,7 @@ export async function collectCodexUsage(): Promise<{ recordsWritten: number }> {
 
 // Allow running directly: `npm run collect:codex` or `tsx collectors/codex/collect.ts`
 if (process.argv[1]?.endsWith("collect.ts")) {
+  applyConfigToEnv();
   collectCodexUsage()
     .then((result) => {
       console.log(`Codex collector: wrote ${result.recordsWritten} records.`);
