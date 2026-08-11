@@ -274,5 +274,6 @@ more than ~3 files go in `PLAN.md` — written by you, executed by
   `STATE.md`, say so in two sentences, decide explicitly.
 - **Mechanics:** `rg` before read; line ranges; surgical edits; filter
   command output at the source; never re-read files already in context.
+  Search hits inside `.venv`, `node_modules`, caches, or build output are noise — discard them and re-search; never follow them.
   Delegation briefs restate the constraints that apply — agents don't
   read this file.
