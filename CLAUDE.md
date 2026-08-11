@@ -254,7 +254,7 @@ spend-risk, or secrets territory STOPs and reports; you make the call
 line per file; if anyone greps around asking "where does X live," fix
 MAP.md) — both seeded 2026-08-11, maintain them from now on. Checkpoint
 at ~50% context (statusline shows the gauge; a Stop hook blocks ending a
-turn with code changed but `STATE.md` stale). Plans for tasks touching
+turn with code changed but `STATE.md` stale). Before any push, or at checkpoint when meaningful un-reviewed changes have accumulated outside the executor path (inline or grunt edits), run `reviewer` on the accumulated diff. Plans for tasks touching
 more than ~3 files go in `PLAN.md` — written by you, executed by
 `executor`, one current task, pruned when done.
 
