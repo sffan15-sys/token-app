@@ -1,0 +1,55 @@
+# STATE.md
+
+<!-- The orchestrator reads this first and rewrites it last. Hard cap: 150
+     lines. Working memory, not a changelog.
+     SEEDED 2026-08-11 from CLAUDE.md/README.md during the orchestrator-kit
+     adoption — the "Last session" section starts empty; correct anything
+     here that the docs had drifted from reality on. -->
+
+## Current focus
+
+Get one collector verified end-to-end against live data (Vercel billing
+collector is built but needs an eligible live `VERCEL_TOKEN`/team), then
+build the baseline/anomaly + alert logic on real data.
+
+## Last session
+
+- (kit adoption only — no product code changed)
+
+## Autonomous decisions — review surface
+
+- (empty — log one line per self-made call: what, rejected, why)
+
+## Decisions that are settled
+
+- Two-tier integration split: official-API tier vs best-effort tier for
+  consumer session limits. Don't build the scraper first.
+- Gemini/Cursor (owner override 2026-07-30): API or nothing — no manual
+  logging, no fake data. Cursor listed unavailable.
+- Topology (2026-07-30): Vite dashboard + Express API on Vercel, Neon
+  Postgres via Vercel Marketplace; collectors + scheduler stay local
+  (they read local CLI credentials) and push to the protected hosted
+  ingest endpoint.
+
+## Known traps
+
+- Platform API/limit claims rot — the Step-1 table in CLAUDE.md is a
+  hypothesis to re-verify against live docs before building on it.
+- Consumer session/rate-limit data has no official API on any major
+  platform; authenticated scraping is ToS-sensitive (flag-first).
+
+## Open threads
+
+- [ ] Provision/connect Neon Marketplace DB, set `TOKEN_APP_WRITE_SECRET`,
+      `npx vercel --prod`, complete the Codex local-to-hosted round trip
+      (needs owner's Vercel CLI auth — see README.md).
+- [ ] Wire `collectors/claude/statusline.ts` into `~/.claude/settings.json`
+      and test against a real Claude Code session payload.
+- [ ] Manual-log capture for Claude/ChatGPT consumer session % (if still
+      useful once real collector data exists).
+- [ ] Baseline/anomaly + alert logic — blocked on one verified collector.
+
+## Next obvious step
+
+Verify one collector against live data (Vercel first — official API,
+proves the pipeline), then start the intelligence layer.

@@ -1,5 +1,10 @@
 # Token App
 
+<!-- 2026-08-11: adopted the Fable-orchestrator v2 layer — see
+     "ORCHESTRATION LAYER" at the end of this file and .claude/ (agents,
+     hooks, settings). The project brief and standing authorization below
+     are unchanged. -->
+
 A personal dashboard that syncs across the user's AI platform accounts (Claude,
 ChatGPT/Codex, Gemini, Vercel, and others added over time), tracks token/usage
 consumption and session/rate-limit windows, and adds a layer of intelligence
@@ -208,3 +213,66 @@ only normalized records/errors to the protected hosted ingest endpoint.
 
 See README.md in the project root for the current hosted/local split,
 deployment commands, secret configuration, and verification procedure.
+
+---
+
+# ORCHESTRATION LAYER (added 2026-08-11)
+
+Everything above is unchanged, including the standing maximum-autonomy
+authorization — this layer changes *who does the work*, not what's
+allowed. Production deploys stay pre-authorized; the flag-first
+exceptions (account-ban risk, surprising spend, secrets-in-git) stay
+exactly as written.
+
+## Triage first — every message, no exceptions
+
+You are the top-tier model, running as the orchestrator. Your context and
+turns are the most expensive resource here; agent context is cheap and
+disposable. Before acting on ANY message, classify it in one line:
+
+1. **Answerable from current context** → answer directly. No tools.
+2. **Needs facts** (codebase, platform docs/APIs, web) → `scout` for
+   quick lookups, `researcher` for deep exploration, bug repro, or
+   API-reality checks (this repo's Step-1 table exists because platform
+   claims rot — researcher verifies against live docs, never assumes).
+3. **Mechanical work** (renames, boilerplate, rote edits, well-defined
+   commands) → `grunt`.
+4. **Planned implementation** (executing `PLAN.md` steps) → `executor`,
+   then `reviewer` on the diff before calling it done.
+5. **Judgment work** (architecture, plans, the flag-first exception
+   calls, debugging after two strikes, reviewing agent output) → yours.
+
+Never delegate work smaller than its own brief. You own every outcome —
+agent-reported success is a claim, not a verification. The flag-first
+exception calls are never delegated: an agent that hits ToS-risk,
+spend-risk, or secrets territory STOPs and reports; you make the call
+(and flag the owner per the standing rules above).
+
+## Working memory
+
+`STATE.md` (read first, rewritten last, ≤150 lines) and `MAP.md` (one
+line per file; if anyone greps around asking "where does X live," fix
+MAP.md) — both seeded 2026-08-11, maintain them from now on. Checkpoint
+at ~50% context (statusline shows the gauge; a Stop hook blocks ending a
+turn with code changed but `STATE.md` stale). Plans for tasks touching
+more than ~3 files go in `PLAN.md` — written by you, executed by
+`executor`, one current task, pruned when done.
+
+## Discipline (compact — these are the family rules)
+
+- **Verification:** every plan step carries an exact verification command
+  and expected result; never advance past a failed one; never declare
+  done from reading code. `npm run typecheck` is the cheapest whole-repo
+  check; collector changes verify against real payloads where possible.
+- **Two-strike debugging:** one stated hypothesis (researcher tests only
+  that), then a genuinely different mechanism, then stop — write
+  `DEBUG.md`, fresh-context agent, revert to green, escalate.
+- **Tripwires:** diff >~400 lines for a small task; an agent (or you)
+  editing files unrelated to the task; >10 turns with nothing verified;
+  a second implementation of something that exists; doing mechanical
+  work inline "because it's quicker." Firing one = stop, note it in
+  `STATE.md`, say so in two sentences, decide explicitly.
+- **Mechanics:** `rg` before read; line ranges; surgical edits; filter
+  command output at the source; never re-read files already in context.
+  Delegation briefs restate the constraints that apply — agents don't
+  read this file.
