@@ -14,7 +14,18 @@ build the baseline/anomaly + alert logic on real data.
 
 ## Last session
 
-- (kit adoption only — no product code changed)
+- 2026-08-11: Owner asked for a top-level assessment + live market check
+  ("does this app already exist?") before continuing the build. No product
+  code changed (working-tree extras are pre-existing untracked files:
+  `CLAUDE.md.pre-v2.bak`, `_to_delete/`). Verified: `npm run typecheck`
+  passes clean. Market survey completed: the niche IS substantially
+  occupied (tokenkarma, Claude Tuner, SessionWatcher — active 2026
+  products covering multi-provider session windows + basic intelligence).
+  Unoccupied slivers: cross-platform routing recommendations, true
+  personal-baseline anomaly detection, Vercel infra billing bundled in.
+  Per owner's instruction ("if it already exists, stop and report"),
+  stopped before planning/execution — awaiting owner's build-vs-adopt
+  decision.
 
 ## Autonomous decisions — review surface
 
