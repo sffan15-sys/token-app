@@ -44,6 +44,11 @@
 | `dist/` | tsc build output | Generated — never hand-edit |
 | `SPECS.md` | Verified platform API reality (Step-1 conclusions) | — |
 | `skills-lock.json`, `.claude/skills/`, `.agents/skills/` | Pinned neon/neon-postgres agent skills | Don't edit by hand — managed by skills tooling |
+| `.claude/agents/architect.md` | Fable ceiling-judgment agent (kit-v3 category 6) | Scarce/metered — mandatory only post-DEBUG.md |
+| `.claude/skills/pause/SKILL.md` | Usage-limit pause protocol; writes PAUSE.md | PAUSE.md outranks STATE.md at session start |
+| `PLANtemplate.md` | Template for PLAN.md | Copy, don't edit in place |
+| `docs/OPERATINGMANUAL.md` | Kit operating manual | Reference |
+| `.gitattributes` | Pins `*.sh` to LF | Without it CRLF shebangs break every hook |
 
 ## Dead / do-not-touch
 

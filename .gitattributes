@@ -1,0 +1,3 @@
+# core.autocrlf=true on this machine. Without this pin a fresh clone gets CRLF
+# shebangs and EVERY .claude hook breaks with no error pointing at the cause.
+*.sh text eol=lf

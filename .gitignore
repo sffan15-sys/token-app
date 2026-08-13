@@ -10,3 +10,6 @@ dist/
 
 .vercel
 .env*
+.scratch/
+/_to_delete/
+*.pre-v2.bak

@@ -40,7 +40,8 @@ except Exception:
     sys.exit(0)
 
 dirty = [l for l in out.splitlines() if l.strip()]
-code_changed = any("STATE.md" not in l and "MAP.md" not in l for l in dirty)
+code_changed = any(
+    not any(k in l for k in ("STATE.md", "MAP.md", "PAUSE.md")) for l in dirty)
 state_age = time.time() - os.path.getmtime("STATE.md")
 
 if code_changed and state_age > STALE_SECONDS:

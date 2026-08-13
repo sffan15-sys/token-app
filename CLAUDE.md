@@ -241,6 +241,18 @@ disposable. Before acting on ANY message, classify it in one line:
    then `reviewer` on the diff before calling it done.
 5. **Judgment work** (architecture, plans, the flag-first exception
    calls, debugging after two strikes, reviewing agent output) → yours.
+6. **Ceiling judgment** → `architect` (Fable). Two parts, only these two:
+   - **Mechanical, mandatory.** `DEBUG.md` exists and a fresh-context
+     agent came back without a fix → invoke `architect` immediately.
+     No deliberation, no "one more try."
+   - **Judgment, soft.** A design fork whose consequences are measured
+     in days of rework, where you attempted the call yourself and can
+     say why your answer isn't good enough → `architect`, one page.
+
+   Fable is scarce and usage-metered: invoking it for work you handle is
+   the same triage failure as doing grunt work, in the expensive
+   direction. Log every invocation in `STATE.md` → **Architect
+   invocations**.
 
 Never delegate work smaller than its own brief. You own every outcome —
 agent-reported success is a claim, not a verification. The flag-first
@@ -249,6 +261,13 @@ spend-risk, or secrets territory STOPs and reports; you make the call
 (and flag the owner per the standing rules above).
 
 ## Working memory
+
+At session start, if `PAUSE.md` exists it outranks `STATE.md` and
+`MAP.md` — follow its resume instructions, then delete it. When a usage
+limit warning appears, when the owner says we're at the limit, or when a
+reset time is announced: invoke the **`pause` skill** and execute it
+completely. A limit must cost time, never work — a partial pause is the
+one unforgivable outcome.
 
 `STATE.md` (read first, rewritten last, ≤150 lines) and `MAP.md` (one
 line per file; if anyone greps around asking "where does X live," fix

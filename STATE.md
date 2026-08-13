@@ -64,3 +64,7 @@ build the baseline/anomaly + alert logic on real data.
 
 Verify one collector against live data (Vercel first — official API,
 proves the pipeline), then start the intelligence layer.
+
+## Architect invocations
+
+- (none yet)
