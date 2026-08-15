@@ -296,3 +296,27 @@ more than ~3 files go in `PLAN.md` — written by you, executed by
   Search hits inside `.venv`, `node_modules`, caches, or build output are noise — discard them and re-search; never follow them.
   Delegation briefs restate the constraints that apply — agents don't
   read this file.
+
+# HUMAN-ACTIONS.md — the standing record for anything requiring the owner
+
+**Every action requiring the owner goes in `HUMAN-ACTIONS.md`, always, the
+moment you identify it.** Anything needing their identity, login, payment method,
+approval, a click in a UI you can't reach, or anything the guard denies as
+human-only. One file, that exact name, at the project root. Never a variant.
+
+Entries carry: a `[BLOCKING]`/`[UPGRADE]` tag and rough time cost, why it
+matters, light numbered steps, **every exact value written out literally** (URLs,
+secret names, file paths, menu labels — paraphrasing is what actually costs them
+time), and a concrete "Worked if:" signal.
+
+Every entry carries a `**Status:** OPEN` line. The owner changes that one word to
+`DONE`, `SKIP` (chose not to — add a few words why), or `BLOCKED` (tried,
+something stopped them). They never cut, paste, or move a block. Any session
+that opens `HUMAN-ACTIONS.md` reconciles it: move every non-`OPEN` item into
+`DONE`, stamp the date, keep its number. Item numbers are stable IDs — never
+reused, never renumbered — so "#4" refers to the same thing forever, including
+after it is filed.
+
+Move finished items to a `DONE` section with the date; never delete them,
+because the history is how you stop re-asking. `SKIP` is final: do not re-raise
+a skipped item, and do not re-argue the recommendation behind it.
