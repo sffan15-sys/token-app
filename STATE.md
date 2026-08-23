@@ -70,3 +70,5 @@ proves the pipeline), then start the intelligence layer.
 ## Architect invocations
 
 - (none yet)
+
+- kit v3.3.1 applied 2026-08-23, see root PLAN.md
