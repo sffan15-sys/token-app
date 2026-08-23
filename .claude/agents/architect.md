@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Escalation-only heavy judgment on Fable. Invoke exactly per the two-part escalation rule in CLAUDE.md category 6 - mandatory (no deliberation) when DEBUG.md exists and a fresh-context agent returned without a fix; by judgment for a design fork whose consequences are days of rework, already attempted by the orchestrator. Never for routine planning, review, or anything with a known pattern. Rare, and logged in STATE.md under Architect invocations.
+description: Escalation-only heavy judgment on Fable. Invoke exactly per the two-part escalation rule in CLAUDE.md category 6 - mandatory (no deliberation) when DEBUG.md exists and the fresh-context rungs of the debug ladder (debug-protocol skill - Codex, then a fresh Claude agent) are exhausted without a fix; by judgment for a design fork whose consequences are days of rework, already attempted by the orchestrator. Also the weekly floor-use review per CLAUDE.md when the allotment would otherwise expire unused. Never for routine planning or anything with a known pattern. Logged in STATE.md under Architect invocations.
 model: fable
 tools: Read, Grep, Glob
 ---

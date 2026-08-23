@@ -19,7 +19,7 @@ PYBIN=""
 for c in ./.venv/Scripts/python ./.venv/bin/python python3 python; do
   command -v "$c" >/dev/null 2>&1 && "$c" -c "" >/dev/null 2>&1 && { PYBIN="$c"; break; }
 done
-[ -z "$PYBIN" ] && { echo "[kit] WARNING: python not found; post-edit.sh is NOT enforcing" >&2; exit 0; }  # fail open
+[ -z "$PYBIN" ] && exit 0
 f=$("$PYBIN" -c 'import json,sys; print(json.load(sys.stdin).get("tool_input",{}).get("file_path",""))' 2>/dev/null)
 [ -n "$f" ] && [ -f "$f" ] && $FORMAT_CMD "$f" >/dev/null 2>&1
 

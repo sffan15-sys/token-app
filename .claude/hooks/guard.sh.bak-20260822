@@ -17,7 +17,7 @@ PYBIN=""
 for c in ./.venv/Scripts/python ./.venv/bin/python python3 python; do
   command -v "$c" >/dev/null 2>&1 && "$c" -c "" >/dev/null 2>&1 && { PYBIN="$c"; break; }
 done
-if [ -n "$PYBIN" ]; then
+[ -z "$PYBIN" ] && exit 0
 "$PYBIN" - "$input" <<'PY'
 import json, re, sys
 
@@ -66,63 +66,3 @@ for pat, label in PATTERNS:
 
 sys.exit(0)
 PY
-  exit 0
-fi
-
-# No runnable python — fall back to node running an embedded JS twin of this
-# repo's same deny-pattern matcher (identical patterns, identical output shape).
-NODEBIN=""
-if command -v node >/dev/null 2>&1 && node -e "" >/dev/null 2>&1; then NODEBIN="node"; fi
-
-if [ -n "$NODEBIN" ]; then
-"$NODEBIN" - "$input" <<'JS'
-let data, cmd;
-try {
-  data = JSON.parse(process.argv[2]);
-  cmd = (data.tool_input && data.tool_input.command) || "";
-} catch (e) {
-  process.exit(0);
-}
-
-const PATTERNS = [
-  [/\brm\s+(-[a-zA-Z]*[rf][a-zA-Z]*\s+)+(?!(\.\/)?(node_modules|dist|public|\.tmp-npm-cache)\b)/,
-   "recursive/forced rm (generated dirs node_modules/dist/public are exempt)"],
-  [/\bgit\s+push\b[^\n]*(\s--force\b|\s-f\b|\s--force-with-lease\b)/, "force push"],
-  [/\bgit\s+reset\s+--hard\b/, "hard reset"],
-  [/\bgit\s+clean\b/, "git clean"],
-  [/--no-verify\b/, "verification bypass (--no-verify)"],
-  // Real secret files only — .env.example/.sample/.template/.dist stay readable.
-  // Trailing class includes shell metachars so cat .env; can't slip the deny.
-  // The exempt lookahead is END-ANCHORED on purpose: the kit-v3 original was
-  // not, so .env.examples / .env.templateXYZ (a secret file one character
-  // off a template name) silently bypassed the deny. Exempt = exactly those
-  // four names, nothing that merely starts with them.
-  [/(^|[\s/'"])\.env(?!\.(example|sample|template|dist)([\s'";|&<>)]|$))(\.[A-Za-z0-9_.-]+)?([\s'";|&<>)]|$)/,
-   "touching .env files"],
-  // token-app hardening the generic kit lacks — kept: even if the broad rule
-  // above is ever relaxed, committing secrets stays mechanically impossible.
-  [/\bgit\s+(add|commit|stage)\b[^\n]*(^|[\s/'"])\.env(?!\.example\b)(rc\b)?(\.[A-Za-z0-9_.-]+)?([\s'";|&<>)]|$)/,
-   "staging/committing a .env file — never commit secrets"],
-  [/\bgit\s+add\s+(-A\b|--all\b|\.(\s|$|[;|&]))/,
-   "blanket git add — stage files explicitly so secrets can't slip in"],
-  [/\bchmod\s+(-R\s+)?777\b/, "chmod 777"],
-  [/\bgh\s+(secret|variable)\s+(set|delete)\b/, "gh secret/variable mutation"],
-];
-
-for (const [pat, label] of PATTERNS) {
-  if (pat.test(cmd)) {
-    const reason = "Blocked by guard hook: " + label +
-      ". This is one of the hard lines CLAUDE.md keeps even in maximum-autonomy mode — stop and ask the human.";
-    const reasonJson = JSON.stringify(reason).replace(/—/g, "\\u2014");
-    process.stdout.write('{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": ' + reasonJson + '}}\n');
-    process.exit(0);
-  }
-}
-
-process.exit(0);
-JS
-  exit 0
-fi
-
-echo "[kit] WARNING: python not found; guard.sh is NOT enforcing" >&2
-exit 0  # fail open: no interpreter found, no guard — normal permissions still apply

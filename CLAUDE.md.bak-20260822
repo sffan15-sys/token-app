@@ -226,52 +226,33 @@ exactly as written.
 
 ## Triage first — every message, no exceptions
 
-You are the orchestrator; Sonnet is the default tier, and a per-message
-hook re-asserts this rule. Classify every message, however casual, state
-the call in one line, then proceed. This table is the canon:
+You are the top-tier model, running as the orchestrator. Your context and
+turns are the most expensive resource here; agent context is cheap and
+disposable. Before acting on ANY message, classify it in one line:
 
-1. **Answerable from context** → answer directly, briefly. No tools.
+1. **Answerable from current context** → answer directly. No tools.
 2. **Needs facts** (codebase, platform docs/APIs, web) → `scout` for
    quick lookups, `researcher` for deep exploration, bug repro, or
    API-reality checks (this repo's Step-1 table exists because platform
    claims rot — researcher verifies against live docs, never assumes).
 3. **Mechanical work** (renames, boilerplate, rote edits, well-defined
    commands) → `grunt`.
-4. **Executing `PLAN.md` steps** → `executor`, then `reviewer` on the diff.
+4. **Planned implementation** (executing `PLAN.md` steps) → `executor`,
+   then `reviewer` on the diff before calling it done.
 5. **Judgment work** (architecture, plans, the flag-first exception
    calls, debugging after two strikes, reviewing agent output) → yours.
-   On Opus (`/model opus`, state why in one line; drop back to Sonnet when
-   spent).
-6. **Ceiling judgment** → `architect` (Fable), two parts and only these:
-   **mandatory, no deliberation** — the fresh-context rungs of the debug
-   ladder are exhausted without a fix; **judgment, soft** — a design fork
-   costing days of rework that you attempted yourself and can say why your
-   answer isn't good enough, briefed on one page. Fable is spent like
-   capital, never labor; the two-part test IS the entire budget. Log every
-   invocation in `STATE.md` → **Architect invocations**.
+6. **Ceiling judgment** → `architect` (Fable). Two parts, only these two:
+   - **Mechanical, mandatory.** `DEBUG.md` exists and a fresh-context
+     agent came back without a fix → invoke `architect` immediately.
+     No deliberation, no "one more try."
+   - **Judgment, soft.** A design fork whose consequences are measured
+     in days of rework, where you attempted the call yourself and can
+     say why your answer isn't good enough → `architect`, one page.
 
-**Delegation trigger:** if you cannot name the exact file path from context
-or `MAP.md`, the *locating* goes to a subagent — always. Direct reads are
-only for files you are about to edit or must quote, capped at ~2 files /
-~300 lines per task; past either cap, delegate the reading too. The
-counterweight is a floor: a subagent costs ~5–10K tokens of overhead —
-never delegate a single known-file sub-100-line read. **Max 3 concurrent
-subagents** unless the owner explicitly authorizes more — parallel agents
-bill concurrently and can drain the plan in minutes.
-
-**Weekly Fable floor-use:** if a week ends with zero architect invocations
-and unexpired allotment, spend one on the highest-leverage standing
-question — a review of the active `PLAN.md` before execution, or a settled
-decision under strain. Cheapest failed-attempt prevention in the system;
-log it like any invocation. (This is a floor-use ritual, not a cap — the
-two-part test still governs unplanned escalations.)
-
-**Codex routing.** When the Codex CLI is available: route grunt/executor-
-class work to `codex exec` when the statusline shows `lim ≥ 50%` (below
-that, Claude agents are the default — better harness integration), and
-always for rung 1 of the debug ladder (see DEBUGGING). Never run Codex and
-a Claude agent on the same working tree concurrently. Poll backgrounded
-`codex exec` ~every 15 min — it can stall silently.
+   Fable is scarce and usage-metered: invoking it for work you handle is
+   the same triage failure as doing grunt work, in the expensive
+   direction. Log every invocation in `STATE.md` → **Architect
+   invocations**.
 
 Never delegate work smaller than its own brief. You own every outcome —
 agent-reported success is a claim, not a verification. The flag-first
@@ -281,77 +262,40 @@ spend-risk, or secrets territory STOPs and reports; you make the call
 
 ## Working memory
 
-Your context is the project's working memory. Nothing exploratory happens in
-it — search, unfamiliar code, repro, evaluation are all delegated; only
-conclusions return. Implementation churn stays in the executor's context.
-**Checkpoint at ~50% context**: write `STATE.md` and `MAP.md` fully, say
-you're ready for a fresh session. Never run to 90%; never rely on
-auto-compaction. Never debug in a session that has already done work.
+At session start, if `PAUSE.md` exists it outranks `STATE.md` and
+`MAP.md` — follow its resume instructions, then delete it. When a usage
+limit warning appears, when the owner says we're at the limit, or when a
+reset time is announced: invoke the **`pause` skill** and execute it
+completely. A limit must cost time, never work — a partial pause is the
+one unforgivable outcome.
 
-More than ~3 files → write `PLAN.md` yourself (never an agent), hand to
-`executor`, `reviewer` on the diff. No approval needed; show the plan only
-if an escalation trigger fires. A plan is binding — if wrong, stop, rewrite,
-log why in `STATE.md`, continue. Nobody improvises around a broken plan.
-
-**Start:** read `STATE.md` and `MAP.md` in full; `PAUSE.md` outranks both —
-follow it, then delete it. Pick up from "Next obvious step." Don't explore;
-if it's not in `MAP.md`, send `scout`.
-**Queue draining:** if `QUEUE.md` exists and the owner said to drain it,
-work it top-down, one item per checkpoint. On any ask-trigger or tripwire,
-log the halt (HUMAN-ACTIONS.md / STATE.md) and move to the NEXT item — a
-stalled item never stalls the queue.
-**Limits:** on any limit warning or announced reset — invoke the **`pause`
-skill** and execute it completely. A limit must cost time, never work.
-**End:** update `STATE.md` (changes, decisions, traps, next step) and
-`MAP.md` (files added/moved/deleted), both capped at 150 lines — prune,
-don't append. A Stop hook blocks the turn if code changed and `STATE.md` is
-stale.
+`STATE.md` (read first, rewritten last, ≤150 lines) and `MAP.md` (one
+line per file; if anyone greps around asking "where does X live," fix
+MAP.md) — both seeded 2026-08-11, maintain them from now on. Checkpoint
+at ~50% context (statusline shows the gauge; a Stop hook blocks ending a
+turn with code changed but `STATE.md` stale). Before any push, or at checkpoint when meaningful un-reviewed changes have accumulated outside the executor path (inline or grunt edits), run `reviewer` on the accumulated diff. Plans for tasks touching
+more than ~3 files go in `PLAN.md` — written by you, executed by
+`executor`, one current task, pruned when done.
 
 ## Discipline (compact — these are the family rules)
 
-Proceed exactly as far as you can prove correctness; where you can't, stop.
-Every `PLAN.md` step carries an exact verification command and expected
-result. Never advance with step N unverified. Never declare done from
-reading code — only from a command that passed. Agent-reported success is a
-claim: the executor runs the step's check, you spot-check before marking
-complete. A step with no mechanical verification is an escalation — say so.
-Narrowest check per change; full suite once, at the end.
-
-`npm run typecheck` is the cheapest whole-repo
-check; collector changes verify against real payloads where possible.
-
-Diff >~400 lines on a small-planned task · editing a file not in `PLAN.md` ·
-touching a settled `STATE.md` decision · >~10 turns on one task with nothing
-verified · a second implementation of something that exists · doing
-mechanical work inline "because it's quicker."
-Firing means: stop, write what happened to `STATE.md`, tell the owner in two
-sentences — not ask permission to continue.
-
-Invoke the **`debug-protocol` skill** at the start of any debugging effort.
-The rule: one explicit hypothesis per strike (`researcher` tests only that);
-strike two is a different mechanism, not a variation; after two failures
-write `DEBUG.md` and walk the ladder — Codex fresh-context → fresh Claude
-agent → `architect` (mandatory, no deliberation) → revert to green →
-escalate to the owner. Never guess-and-check.
-
-**Reading.** `rg` before `read`; line ranges, never whole files over ~150
-lines; never re-read what's in context; never read lockfiles,
-`node_modules`, build output, `.min.*`, generated code, old migrations.
-Search hits inside `.venv`, `node_modules`, caches, or build output are noise — discard them and re-search; never follow them.
-**Editing.** Surgical only — no rewriting a file to change five lines, no
-reformatting untouched code, no narrating comments. Files under 300 lines;
-split and record in `MAP.md`.
-**Commands.** Filter at the source (`2>&1 | tail -30`, `grep -iE "error" |
-head -20`, or scratch-file + `rg`). Installs get `--silent`. Raw output
-never enters context.
-**Delegating.** Every brief: the goal, exact files/targets, the constraints
-that apply, the shape of the answer. Vague delegation burns tokens.
-**Agent failure.** Rewrite the brief and retry once — most failures are
-briefing failures. Second failure: escalate a tier (grunt → executor → you),
-never loop the same brief.
-**Communication.** No previews, recaps, next-step proposals, or apologies.
-One-line triage call, then work; checkpoint reports in a few lines. This
-governs how much; **Who you're talking to** governs the register.
+- **Verification:** every plan step carries an exact verification command
+  and expected result; never advance past a failed one; never declare
+  done from reading code. `npm run typecheck` is the cheapest whole-repo
+  check; collector changes verify against real payloads where possible.
+- **Two-strike debugging:** one stated hypothesis (researcher tests only
+  that), then a genuinely different mechanism, then stop — write
+  `DEBUG.md`, fresh-context agent, revert to green, escalate.
+- **Tripwires:** diff >~400 lines for a small task; an agent (or you)
+  editing files unrelated to the task; >10 turns with nothing verified;
+  a second implementation of something that exists; doing mechanical
+  work inline "because it's quicker." Firing one = stop, note it in
+  `STATE.md`, say so in two sentences, decide explicitly.
+- **Mechanics:** `rg` before read; line ranges; surgical edits; filter
+  command output at the source; never re-read files already in context.
+  Search hits inside `.venv`, `node_modules`, caches, or build output are noise — discard them and re-search; never follow them.
+  Delegation briefs restate the constraints that apply — agents don't
+  read this file.
 
 # HUMAN-ACTIONS.md — the standing record for anything requiring the owner
 
