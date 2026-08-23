@@ -6,6 +6,8 @@
      adoption — the "Last session" section starts empty; correct anything
      here that the docs had drifted from reality on. -->
 
+- kit v3.2 applied 2026-08-22, see root PLAN.md
+
 ## Current focus
 
 Get one collector verified end-to-end against live data (Vercel billing
